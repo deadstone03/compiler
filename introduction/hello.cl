@@ -1,6 +1,7 @@
-Class Main {
+Class Main inherits IO {
   main(): Object{
-    { (new IO).out_string("hello world\n");
-      }
+    {
+      out_string("hello world\n");
+    }
   };
 };
