@@ -1,8 +1,8 @@
-class List {
-  item: String;
+class List inherits A2I {
+  item: Object;
   next: List;
 
-  init(i: String, n: List): List {
+  init(i: Object, n: List): List {
     {
       item <- i;
       next <- n;
@@ -11,11 +11,18 @@ class List {
   };
 
   flatten(): String {
-    if (isvoid next) then
-      item
-    else
-      item.concat(next.flatten())
-    fi
+    let str: String <-
+      case item of
+        i: Int => i2a(i);
+        s: String => s;
+        o: Object => { abort(); ""; };
+      esac
+    in
+      if (isvoid next) then
+        str
+      else
+        str.concat(next.flatten())
+      fi
   };
 };
 class Main inherits IO {
@@ -23,10 +30,12 @@ class Main inherits IO {
     let hello: String <- "hello ",
         world: String <- "World!",
         newline: String <- "\n",
+        number: Int <- 42,
         nil: List,
         list: List <- (new List).init(hello,
                                        (new List).init(world,
-                                                        (new List).init(newline, nil)))
+                                                        (new List).init(newline,
+                                                                         (new List).init(number, nil))))
     in
       out_string(list.flatten())
   };
