@@ -69,15 +69,35 @@ import java_cup.runtime.Symbol;
 %class CoolLexer
 %cup
 
+
+Ai="A|a"
+Ci="C|c"
+Li="L|l"
+Si="S|s"
+
+CLASSi={Ci}{Li}{Ai}{Si}{SI}
+
 %%
 
-<YYINITIAL>"=>"			{ /* Sample lexical rule for "=>" arrow.
-                                     Further lexical rules should be defined
-                                     here, after the last %% separator */
-                                  return new Symbol(TokenConstants.DARROW); }
+<YYINITIAL>"=>" {
+  /* Sample lexical rule for "=>" arrow.
+     Further lexical rules should be defined
+     here, after the last %% separator */
+  return new Symbol(TokenConstants.DARROW); }
 
-.                               { /* This rule should be the very last
-                                     in your lexical specification and
-                                     will match match everything not
-                                     matched by other lexical rules. */
-                                  System.err.println("LEXER BUG - UNMATCHED: " + yytext()); }
+<YYINITIAL>"{CLASSi}" {
+  /* KeyWords
+  The keywords of cool are: class, else, false, fi, if, in, inherits, isvoid,
+  let, loop, pool, then, while, case, esac, new, of, not, true. Except for the
+  constants true and false, keywords are case insensitive.
+  To conform to the rules for other obj
+  */
+  return new Symbol(TokenConstants.CLASS);
+}
+
+. {
+  /* This rule should be the very last
+     in your lexical specification and
+     will match match everything not
+     matched by other lexical rules. */
+  System.err.println("LEXER BUG - UNMATCHED: " + yytext()); }
