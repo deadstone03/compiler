@@ -34,6 +34,7 @@ import java_cup.runtime.Symbol;
 	return filename;
     }
 
+    private boolean string_contains_null = false;
     private int block_comment_count = 0;
 
     void inc_block_comment_count() {
@@ -67,6 +68,16 @@ import java_cup.runtime.Symbol;
     case YYINITIAL:
 	/* nothing special to do in the initial state */
 	break;
+    case BLOCK_COMMENT_S:
+        yybegin(YYINITIAL);
+        return new Symbol(
+            TokenConstants.ERROR,
+            "EOF in comment");
+    case STRING_S:
+        yybegin(YYINITIAL);
+        return new Symbol(
+            TokenConstants.ERROR,
+            "EOF in string constant");
 	/* If necessary, add code for other states here, e.g:
 	   case COMMENT:
 	   ...
@@ -78,7 +89,6 @@ import java_cup.runtime.Symbol;
 
 %class CoolLexer
 %cup
-%line
 
 %state LINE_COMMENT_S, BLOCK_COMMENT_S, STRING_S
 
@@ -125,7 +135,6 @@ Zz=(Z|z)
 <YYINITIAL>"{" { return new Symbol(TokenConstants.LBRACE); }
 <YYINITIAL>"}" { return new Symbol(TokenConstants.RBRACE); }
 <YYINITIAL>"." { return new Symbol(TokenConstants.DOT); }
-<YYINITIAL>"@" { return new Symbol(TokenConstants.AT); }
 <YYINITIAL>"~" { return new Symbol(TokenConstants.NEG); }
 <YYINITIAL>"*" { return new Symbol(TokenConstants.MULT); }
 <YYINITIAL>"/" { return new Symbol(TokenConstants.DIV); }
@@ -133,8 +142,15 @@ Zz=(Z|z)
 <YYINITIAL>"-" { return new Symbol(TokenConstants.MINUS); }
 <YYINITIAL>"<=" { return new Symbol(TokenConstants.LE); }
 <YYINITIAL>"<" { return new Symbol(TokenConstants.LT); }
+<YYINITIAL>"@" { return new Symbol(TokenConstants.AT); }
 <YYINITIAL>"=" { return new Symbol(TokenConstants.EQ); }
 <YYINITIAL>"<-" { return new Symbol(TokenConstants.ASSIGN); }
+<YYINITIAL>\'(.|\\[0-9]*)\' {
+  return new Symbol(
+      TokenConstants.STR_CONST,
+      AbstractTable.stringtable.addString(
+      yytext().substring(1, yytext().length() - 1)));
+}
 
 <YYINITIAL>{Cc}{Ll}{Aa}{Ss}{Ss} {
   return new Symbol(TokenConstants.CLASS);
@@ -205,9 +221,8 @@ Zz=(Z|z)
    */
    yybegin(LINE_COMMENT_S);
 }
-<LINE_COMMENT_S>.*\n?$ {
+<LINE_COMMENT_S>.*$ {
   /* line comment end */
-  java.lang.System.out.println("Line Comment: " + yytext());
   yybegin(YYINITIAL);
 }
 <YYINITIAL>"(*" {
@@ -217,8 +232,19 @@ Zz=(Z|z)
   inc_block_comment_count();
   string_buf.append(yytext());
 }
-<BLOCK_COMMENT_S>[^\*\(\)]* {
+<YYINITIAL>"*)" {
+  /* unmatched block comment end*/
+  return new Symbol(
+      TokenConstants.ERROR,
+      "unmatched close comment.");
+}
+<BLOCK_COMMENT_S>[^\*\(\)\n]+ {
   // not special char
+  string_buf.append(yytext());
+}
+<BLOCK_COMMENT_S>\n {
+  // special char \n
+  curr_lineno++;
   string_buf.append(yytext());
 }
 <BLOCK_COMMENT_S>"(*" {
@@ -230,7 +256,6 @@ Zz=(Z|z)
   // end of a lay of comment
   string_buf.append(yytext());
   if (dec_block_comment_count() == 0) {
-    java.lang.System.out.println("Block Comment: " + string_buf);
     yybegin(YYINITIAL);
   }
 }
@@ -242,29 +267,79 @@ Zz=(Z|z)
 <YYINITIAL>"\"" {
   // string begin
   yybegin(STRING_S);
+  string_contains_null = false;
   string_buf.delete(0, string_buf.length());
 }
-<STRING_S>[^\"\n\\]* {
+<STRING_S>\\\n {
+  // not end
+  curr_lineno++;
+  string_buf.append("\n");
+}
+<STRING_S>[^\"\n\\\0]* {
   // not special char
   string_buf.append(yytext());
 }
-<STRING_S>(\\\")|\\ {
+<STRING_S>\\n {
   // special char
-  string_buf.append(yytext());
+  string_buf.append("\n");
+}
+<STRING_S>\\f {
+  // special char
+  string_buf.append("\f");
+}
+<STRING_S>\\t {
+  // special char
+  string_buf.append("\t");
+}
+<STRING_S>\\b {
+  // special char
+  string_buf.append("\b");
+}
+<STRING_S>\\\\ {
+  // special char
+  string_buf.append("\\");
+}
+<STRING_S>\\\0 {
+  // special char
+  string_contains_null = true;
+  return new Symbol(
+      TokenConstants.ERROR,
+      "String contains escaped null character");
+}
+<STRING_S>\\. {
+  // special char
+  string_buf.append(yytext().charAt(1));
+}
+<STRING_S>\0 {
+  // special char
+  string_contains_null = true;
+  return new Symbol(
+      TokenConstants.ERROR,
+      "String contains null character");
 }
 <STRING_S>\" {
-  // end of string 
+  // end of string
   yybegin(YYINITIAL);
-  return new Symbol(
-      TokenConstants.STR_CONST,
-      AbstractTable.stringtable.addString(string_buf.toString()));
+  if (!string_contains_null) {
+    if (string_buf.length() >= MAX_STR_CONST) {
+      return new Symbol(
+          TokenConstants.ERROR,
+          "String constant too long");
+    }
+    return new Symbol(
+        TokenConstants.STR_CONST,
+        AbstractTable.stringtable.addString(string_buf.toString()));
+  }
 }
 <STRING_S>\n {
   // return line in string, it's an error
   yybegin(YYINITIAL);
-  return new Symbol(
-      TokenConstants.ERROR,
-      java.lang.String.format("%d: String should close with \".", yyline));
+  curr_lineno++;
+  if (!string_contains_null) {
+    return new Symbol(
+        TokenConstants.ERROR,
+        "String should close with \".");
+  }
 }
 
 <YYINITIAL>[0-9]+ {
@@ -281,10 +356,10 @@ Zz=(Z|z)
       AbstractTable.idtable.addString(yytext()));
 }
 
-<YYINITIAL>"SELF TYPE" {
+<YYINITIAL>"SELF_TYPE" {
   // SELF_TYPE
   return new Symbol(
-      TokenConstants.OBJECTID,
+      TokenConstants.TYPEID,
       AbstractTable.idtable.addString(yytext()));
 }
 
@@ -302,7 +377,11 @@ Zz=(Z|z)
       AbstractTable.idtable.addString(yytext()));
 }
 
-<YYINITIAL>[ \n\f\r\t\v] {
+<YYINITIAL>\n {
+  curr_lineno++;
+}
+
+<YYINITIAL>[ \f\r\t\v\013] {
   /* white space
      blank (ascii 32), \n (newline, ascii 10), \f (form feed, ascii 12),
      \r (carriage return, ascii 13), \t (tab, ascii 9), \v (vertical tab, ascii 11)
@@ -315,4 +394,7 @@ Zz=(Z|z)
      in your lexical specification and
      will match match everything not
      matched by other lexical rules. */
-  System.err.println("LEXER BUG - UNMATCHED: " + yytext()); }
+  return new Symbol(
+      TokenConstants.ERROR,
+      yytext());
+}

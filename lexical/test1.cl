@@ -14,8 +14,15 @@ case (* this is a block comment ( let me explain )
         *)
 1234
 esac
-new "this is a \" string"
+new "this is a \" \\  string"
 of "a string not end
 not -- this is the second comment
 
 class Ab
+
+(* a *)
+-- c
+(* b *)
+--d
+
+'
