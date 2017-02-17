@@ -1,3 +1,5 @@
 *.s
 *.swp
 *.class
+*/grading/*
+*.pl
