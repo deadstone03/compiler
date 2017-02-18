@@ -81,11 +81,12 @@ nonterminal Expression ins;
 /* Precedence declarations go here. */
 precedence right ASSIGN;
 precedence right NOT;
-precedence right ISVOID;
 precedence nonassoc LT, LE, EQ;
 precedence left PLUS, MINUS;
 precedence left MULT, DIV;
+precedence right ISVOID;
 precedence right NEG;
+precedence left DOT;
 
 program	
 	::= class_list:cl
@@ -103,7 +104,7 @@ class_list
 
 /* If no parent is specified, the class inherits from the Object class */
 class
-	::= CLASS TYPEID:n LBRACE feature_list:f RBRACE SEMI
+	::= CLASS TYPEID:n LBRACE feature_list:f RBRACE SEMI:s
 	    {: RESULT = new class_c(curr_lineno(), n, 
 		                   AbstractTable.idtable.addString("Object"), 
 				   f, curr_filename()); :}
@@ -138,6 +139,8 @@ feature
                   no_expr(curr_lineno()))); :}
         | OBJECTID:o COLON TYPEID:n ASSIGN expression:e
             {: RESULT = (new attr(curr_lineno(), o, n, e)); :}
+        | error
+            {: :}
         ;
 
 formal_list
@@ -158,6 +161,8 @@ expression_list_block
           {: RESULT = (new Expressions(curr_lineno())).appendElement(e); :}
         | expression_list_block:el expression:e SEMI
           {: RESULT = el.appendElement(e); :}
+        | expression_list_block:el error SEMI
+          {: :}
         ;
 expression_list
         ::=
@@ -249,6 +254,10 @@ expression
           {: RESULT = (new string_const(curr_lineno(), s)); :}
         | BOOL_CONST:b
           {: RESULT = (new bool_const(curr_lineno(), b)); :}
+        | WHILE expression:e1 LOOP expression:e2  error
+          {:  :}
+        | WHILE expression:e1 error expression:e2 POOL
+          {:  :}
         | error
           {:  :}
         ;
