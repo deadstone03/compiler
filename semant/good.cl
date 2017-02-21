@@ -1,4 +1,4 @@
-class C inherits D {
+class C {
 	a : Int;
 	b : Bool;
 	init(x : Int, y : Bool) : C {
@@ -11,8 +11,8 @@ class C inherits D {
 };
 
 class D inherits C {
-	a : Int;
-	b : Bool;
+	a : D;
+	b : C;
 	init(x : Int, y : Bool) : C {
            {
 		a <- x;
@@ -25,6 +25,6 @@ class D inherits C {
 
 Class Main {
 	main():C {
-	  (new C).init(1,true)
+	  a <- new C
 	};
 };

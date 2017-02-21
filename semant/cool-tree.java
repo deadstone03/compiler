@@ -9,6 +9,8 @@
 import java.util.Enumeration;
 import java.io.PrintStream;
 import java.util.Vector;
+import java.util.List;
+import java.util.ArrayList;
 
 
 /** Defines simple phylum Program */
@@ -66,6 +68,8 @@ abstract class Feature extends TreeNode {
     }
     public abstract void dump_with_types(PrintStream out, int n);
 
+    public abstract void semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass);
+
 }
 
 
@@ -102,7 +106,8 @@ abstract class Formal extends TreeNode {
         super(lineNumber);
     }
     public abstract void dump_with_types(PrintStream out, int n);
-
+    public abstract AbstractSymbol semant(
+        ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass);
 }
 
 
@@ -149,6 +154,9 @@ abstract class Expression extends TreeNode {
             { out.println(Utilities.pad(n) + ": _no_type"); }
     }
 
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      return currentClass;
+    }
 }
 
 
@@ -265,11 +273,19 @@ class programc extends Program {
     public void semant() {
 	/* ClassTable constructor may do some semantic analysis */
 	ClassTable classTable = new ClassTable(classes);
+        SymbolTable valEnv = new SymbolTable();
+        SymbolTable methodEnv = new SymbolTable();
+        valEnv.enterScope();
+        methodEnv.enterScope();
 	
 	/* some semantic analysis code may go here */
         for (Enumeration e = classes.getElements(); e.hasMoreElements();) {
           class_c c = (class_c)e.nextElement();
+          c.semant(classTable, valEnv, methodEnv);
         }
+
+        valEnv.exitScope();
+        methodEnv.exitScope();
 
 	if (classTable.errors()) {
 	    System.err.println("Compilation halted due to static semantic errors.");
@@ -333,6 +349,35 @@ class class_c extends Class_ {
         out.println(Utilities.pad(n + 2) + ")");
     }
 
+    public void semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv) {
+      valEnv.enterScope();
+      methodEnv.enterScope();
+      // get all head semant, it may be used in attr and other method
+      for (Enumeration e = features.getElements(); e.hasMoreElements();) {
+        Feature f = (Feature)e.nextElement();
+        if (f instanceof method) {
+          method m = (method)f;
+          m.head_semant(classTable, valEnv, methodEnv, getName());
+        }
+      }
+      // get all attr, it may be used in method
+      // later attr can use early attr, early attr can not use later attr
+      for (Enumeration e = features.getElements(); e.hasMoreElements();) {
+        Feature f = (Feature)e.nextElement();
+        if (f instanceof attr) {
+          f.semant(classTable, valEnv, methodEnv, getName());
+        }
+      }
+      // check all method semant
+      for (Enumeration e = features.getElements(); e.hasMoreElements();) {
+        Feature f = (Feature)e.nextElement();
+        if (f instanceof method) {
+          f.semant(classTable, valEnv, methodEnv, getName());
+        }
+      }
+      valEnv.exitScope();
+      methodEnv.exitScope();
+    }
 }
 
 
@@ -369,7 +414,6 @@ class method extends Feature {
         dump_AbstractSymbol(out, n+2, return_type);
         expr.dump(out, n+2);
     }
-
     
     public void dump_with_types(PrintStream out, int n) {
         dump_line(out, n);
@@ -382,6 +426,34 @@ class method extends Feature {
 	expr.dump_with_types(out, n + 2);
     }
 
+    public void semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      valEnv.enterScope();
+      methodEnv.enterScope();
+      for (Enumeration e = formals.getElements(); e.hasMoreElements();) {
+        Formal f = (Formal)e.nextElement();
+        f.semant(classTable, valEnv, methodEnv, currentClass);
+      }
+      AbstractSymbol eT = expr.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(eT, return_type, currentClass, this);
+      methodEnv.exitScope();
+      valEnv.exitScope();
+    }
+    
+    public void head_semant(
+        ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      valEnv.enterScope();
+      methodEnv.enterScope();
+      List<AbstractSymbol> types = new ArrayList<AbstractSymbol>();
+      for (Enumeration e = formals.getElements(); e.hasMoreElements();) {
+        Formal f = (Formal)e.nextElement();
+        AbstractSymbol ft = f.semant(classTable, valEnv, methodEnv, currentClass);
+        types.add(ft);
+      }
+      types.add(return_type);
+      valEnv.exitScope();
+      methodEnv.exitScope();
+      methodEnv.addId(name, types);
+    }
 }
 
 
@@ -424,6 +496,18 @@ class attr extends Feature {
 	init.dump_with_types(out, n + 2);
     }
 
+    public void semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      // TODO(xingdai): impl
+      // Get a3's type t3, check t3 <= a2
+      // here you only need to check type, don't need to set since the type is
+      // already set.
+      AbstractSymbol initT = init.semant(classTable, valEnv, methodEnv, currentClass);
+      if (!initT.equals(TreeConstants.No_type)) {
+          classTable.checkInherits(initT, type_decl, currentClass, this);
+      } else {
+        valEnv.addId(name, type_decl);
+      }
+    }
 }
 
 
@@ -460,7 +544,11 @@ class formalc extends Formal {
         dump_AbstractSymbol(out, n + 2, name);
         dump_AbstractSymbol(out, n + 2, type_decl);
     }
-
+    public AbstractSymbol semant(
+        ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      valEnv.addId(name, type_decl);
+      return type_decl;
+    }
 }
 
 
@@ -541,6 +629,16 @@ class assign extends Expression {
 	dump_type(out, n);
     }
 
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol type_name = (AbstractSymbol)valEnv.lookup(name);
+      AbstractSymbol eT = expr.semant(classTable, valEnv, methodEnv, currentClass);
+      if (type_name == null) {
+        classTable.semantErrorValNotDefine(currentClass, name, this);
+        return eT;
+      }
+      classTable.checkInherits(eT, type_name, currentClass, this);
+      return type_name;
+    }
 }
 
 
@@ -567,6 +665,40 @@ class static_dispatch extends Expression {
         name = a3;
         actual = a4;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol exprT = expr.semant(classTable, valEnv, methodEnv, currentClass);
+      if (exprT.equals(TreeConstants.SELF_TYPE)) {
+        exprT = currentClass;
+      }
+      classTable.checkInherits(exprT, type_name);
+
+      List<AbstractSymbol> types =  (List<AbstractSymbol>)((SymbolTable)methodEnv.lookup(type_name).lookup(name));
+      // TODO if there is no such method, print error.
+      int ind = 0;
+      for (Enumeration e = actual.getElements(); e.hasMoreElements() && ind < types.size();) {
+        AbstractSymbol eT = e.semant(classTable, valEnv, methodEnv, currentClass);
+        classTable.checkInherits(eT, types.get(ind));
+        ind += 1;
+      }
+
+      int provideCount = ind;
+      while(e.hasMoreElements()) {
+        provideCount += 1;
+        e.nextElement();
+      }
+      if (provideCount > types.size() || ind < types.size()) {
+        classTable.semantErrorMethodArgsNotRight(
+            classTable.getClass(currentClass, this, provideCount, types.size());
+      }
+
+      AbstractSymbol returnT = types.get(types.size() - 1);
+      if (returnT.equals(TreeConstants.SELF_TYPE)) {
+        returnT = currentClass;
+      }
+      return set_type(returnT).get_type();
+    }
+
     public TreeNode copy() {
         return new static_dispatch(lineNumber, (Expression)expr.copy(), copy_AbstractSymbol(type_name), copy_AbstractSymbol(name), (Expressions)actual.copy());
     }
@@ -616,6 +748,37 @@ class dispatch extends Expression {
         name = a2;
         actual = a3;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol exprT = expr.semant(classTable, valEnv, methodEnv, currentClass);
+      if (exprT.equals(TreeConstants.SELF_TYPE)) {
+        exprT = currentClass;
+      }
+      List<AbstractSymbol> types =  (List<AbstractSymbol>)((SymbolTable)methodEnv.lookup(exprt).lookup(name));
+      int ind = 0;
+      for (Enumeration e = actual.getElements(); e.hasMoreElements() && ind < types.size();) {
+        AbstractSymbol eT = e.semant(classTable, valEnv, methodEnv, currentClass);
+        classTable.checkInherits(eT, types.get(ind));
+        ind += 1;
+      }
+
+      int provideCount = ind;
+      while(e.hasMoreElements()) {
+        provideCount += 1;
+        e.nextElement();
+      }
+      if (provideCount > types.size() || ind < types.size()) {
+        classTable.semantErrorMethodArgsNotRight(
+            classTable.getClass(currentClass, this, provideCount, types.size());
+      }
+
+      AbstractSymbol returnT = types.get(types.size() - 1);
+      if (returnT.equals(TreeConstants.SELF_TYPE)) {
+        returnT = currentClass;
+      }
+      return set_type(returnT).get_type();
+    }
+
     public TreeNode copy() {
         return new dispatch(lineNumber, (Expression)expr.copy(), copy_AbstractSymbol(name), (Expressions)actual.copy());
     }
@@ -663,6 +826,15 @@ class cond extends Expression {
         then_exp = a2;
         else_exp = a3;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol predT = predT.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(predT, TreeConstants, currentClass, this);
+      AbstractSymbol thenT = then_exp.semant(classTable, valEnv, methodEnv, currentClass);
+      AbstractSymbol elseT = else_exp.semant(classTable, valEnv, methodEnv, currentClass);
+      return classTable.commonAncestor(thenT, elseT);
+    }
+
     public TreeNode copy() {
         return new cond(lineNumber, (Expression)pred.copy(), (Expression)then_exp.copy(), (Expression)else_exp.copy());
     }
@@ -672,7 +844,6 @@ class cond extends Expression {
         then_exp.dump(out, n+2);
         else_exp.dump(out, n+2);
     }
-
     
     public void dump_with_types(PrintStream out, int n) {
         dump_line(out, n);
@@ -712,7 +883,6 @@ class loop extends Expression {
         body.dump(out, n+2);
     }
 
-    
     public void dump_with_types(PrintStream out, int n) {
         dump_line(out, n);
         out.println(Utilities.pad(n) + "_loop");
@@ -721,6 +891,13 @@ class loop extends Expression {
 	dump_type(out, n);
     }
 
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol predT = pred.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(predT, TreeConstants.Bool);
+      AbstractSymbol bodyT = body.semant(classTable, valEnv, methodEnv, currentClass);
+      // bodyT is not used, the code may not go into the loop.
+      return TreeConstants.Object_;
+    }
 }
 
 
@@ -741,6 +918,12 @@ class typcase extends Expression {
         expr = a1;
         cases = a2;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      // TODO(xingdai): impl
+      return currentClass;
+    }
+
     public TreeNode copy() {
         return new typcase(lineNumber, (Expression)expr.copy(), (Cases)cases.copy());
     }
@@ -749,7 +932,6 @@ class typcase extends Expression {
         expr.dump(out, n+2);
         cases.dump(out, n+2);
     }
-
     
     public void dump_with_types(PrintStream out, int n) {
         dump_line(out, n);
@@ -786,7 +968,6 @@ class block extends Expression {
         body.dump(out, n+2);
     }
 
-    
     public void dump_with_types(PrintStream out, int n) {
         dump_line(out, n);
         out.println(Utilities.pad(n) + "_block");
@@ -796,6 +977,18 @@ class block extends Expression {
 	dump_type(out, n);
     }
 
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      valEnv.enterScope();
+      methodEnv.enterScope();
+      AbstractSymbol type_name = TreeConstants.Object_;
+      for (Enumeration e = body.getElements(); e.hasMoreElements();) {
+        Expression expr = (Expression)e.nextElement();
+        type_name = expr.semant(classTable, valEnv, methodEnv, currentClass);
+      }
+      valEnv.exitScope();
+      methodEnv.exitScope();
+      return type_name;
+    }
 }
 
 
@@ -822,6 +1015,19 @@ class let extends Expression {
         init = a3;
         body = a4;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol initT = init.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(initT, type_decl);
+      valEnv.enterScope();
+      methodEnv.enterScope();
+      valEnv.addId(identifier, type_decl);
+      AbstractSymbol bodyT = body.semant(classTable, valEnv, methodEnv, currentClass);
+      valEnv.exitScope();
+      methodEnv.exitScope();
+      return bodyT;
+    }
+
     public TreeNode copy() {
         return new let(lineNumber, copy_AbstractSymbol(identifier), copy_AbstractSymbol(type_decl), (Expression)init.copy(), (Expression)body.copy());
     }
@@ -864,6 +1070,15 @@ class plus extends Expression {
         e1 = a1;
         e2 = a2;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol e1t = e1.semant(classTable, valEnv, methodEnv, currentClass);
+      AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(e1t, TreeConstants.Int);
+      classTable.checkInherits(e2t, TreeConstants.Int);
+      return TreeConstants.Int;
+    }
+
     public TreeNode copy() {
         return new plus(lineNumber, (Expression)e1.copy(), (Expression)e2.copy());
     }
@@ -902,6 +1117,15 @@ class sub extends Expression {
         e1 = a1;
         e2 = a2;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol e1t = e1.semant(classTable, valEnv, methodEnv, currentClass);
+      AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(e1t, TreeConstants.Int);
+      classTable.checkInherits(e2t, TreeConstants.Int);
+      return TreeConstants.Int;
+    }
+
     public TreeNode copy() {
         return new sub(lineNumber, (Expression)e1.copy(), (Expression)e2.copy());
     }
@@ -940,6 +1164,15 @@ class mul extends Expression {
         e1 = a1;
         e2 = a2;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol e1t = e1.semant(classTable, valEnv, methodEnv, currentClass);
+      AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(e1t, TreeConstants.Int);
+      classTable.checkInherits(e2t, TreeConstants.Int);
+      return TreeConstants.Int;
+    }
+
     public TreeNode copy() {
         return new mul(lineNumber, (Expression)e1.copy(), (Expression)e2.copy());
     }
@@ -978,6 +1211,15 @@ class divide extends Expression {
         e1 = a1;
         e2 = a2;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol e1t = e1.semant(classTable, valEnv, methodEnv, currentClass);
+      AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(e1t, TreeConstants.Int);
+      classTable.checkInherits(e2t, TreeConstants.Int);
+      return TreeConstants.Int;
+    }
+
     public TreeNode copy() {
         return new divide(lineNumber, (Expression)e1.copy(), (Expression)e2.copy());
     }
@@ -1013,6 +1255,13 @@ class neg extends Expression {
         super(lineNumber);
         e1 = a1;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol e1t = e1.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(e1t, TreeConstants.Int);
+      return TreeConstants.Int;
+    }
+
     public TreeNode copy() {
         return new neg(lineNumber, (Expression)e1.copy());
     }
@@ -1049,6 +1298,15 @@ class lt extends Expression {
         e1 = a1;
         e2 = a2;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol e1t = e1.semant(classTable, valEnv, methodEnv, currentClass);
+      AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(e1t, TreeConstants.Int);
+      classTable.checkInherits(e2t, TreeConstants.Int);
+      return TreeConstants.Bool;
+    }
+
     public TreeNode copy() {
         return new lt(lineNumber, (Expression)e1.copy(), (Expression)e2.copy());
     }
@@ -1087,6 +1345,15 @@ class eq extends Expression {
         e1 = a1;
         e2 = a2;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol e1t = e1.semant(classTable, valEnv, methodEnv, currentClass);
+      AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(e1t, TreeConstants.Int);
+      classTable.checkInherits(e2t, TreeConstants.Int);
+      return TreeConstants.Bool;
+    }
+
     public TreeNode copy() {
         return new eq(lineNumber, (Expression)e1.copy(), (Expression)e2.copy());
     }
@@ -1125,6 +1392,15 @@ class leq extends Expression {
         e1 = a1;
         e2 = a2;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol e1t = e1.semant(classTable, valEnv, methodEnv, currentClass);
+      AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(e1t, TreeConstants.Int);
+      classTable.checkInherits(e2t, TreeConstants.Int);
+      return TreeConstants.Bool;
+    }
+
     public TreeNode copy() {
         return new leq(lineNumber, (Expression)e1.copy(), (Expression)e2.copy());
     }
@@ -1160,6 +1436,13 @@ class comp extends Expression {
         super(lineNumber);
         e1 = a1;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol type_name = a1.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(type_name, TreeConstants.Bool);
+      return TreeConstants.Bool;
+    }
+
     public TreeNode copy() {
         return new comp(lineNumber, (Expression)e1.copy());
     }
@@ -1193,6 +1476,11 @@ class int_const extends Expression {
         super(lineNumber);
         token = a1;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      return TreeConstants.Int;
+    }
+
     public TreeNode copy() {
         return new int_const(lineNumber, copy_AbstractSymbol(token));
     }
@@ -1226,6 +1514,11 @@ class bool_const extends Expression {
         super(lineNumber);
         val = a1;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      return TreeConstants.Bool;
+    }
+
     public TreeNode copy() {
         return new bool_const(lineNumber, copy_Boolean(val));
     }
@@ -1259,6 +1552,12 @@ class string_const extends Expression {
         super(lineNumber);
         token = a1;
     }
+
+    public AbstractSymbol semant(
+        ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      return TreeConstants.Str;
+    }
+
     public TreeNode copy() {
         return new string_const(lineNumber, copy_AbstractSymbol(token));
     }
@@ -1294,6 +1593,15 @@ class new_ extends Expression {
         super(lineNumber);
         type_name = a1;
     }
+
+    public AbstractSymbol semant(
+        ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      if (type_name.equals(SELF_TYPE)) {
+        return currentClass;
+      }
+      return type_name;
+    }
+
     public TreeNode copy() {
         return new new_(lineNumber, copy_AbstractSymbol(type_name));
     }
@@ -1327,6 +1635,13 @@ class isvoid extends Expression {
         super(lineNumber);
         e1 = a1;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol type_name = e1.semant(classTable, valEnv, methodEnv, currentClass);
+      // is the type-name need to be checked?
+      return TreeConstants.Bool;
+    }
+
     public TreeNode copy() {
         return new isvoid(lineNumber, (Expression)e1.copy());
     }
@@ -1371,6 +1686,10 @@ class no_expr extends Expression {
 	dump_type(out, n);
     }
 
+    public AbstractSymbol semant(
+        ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      return set_type(TreeConstants.No_type).get_type();
+    }
 }
 
 

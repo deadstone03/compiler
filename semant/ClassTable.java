@@ -7,19 +7,19 @@ import java.util.Enumeration;
  * the inheritance graph.  You may use it or not as you like: it is only
  * here to provide a container for the supplied methods.  */
 class ClassTable {
-    private Map<String, class_c> classMap = new HashMap<String, class_c>();
+    private SymbolTable classTable = new SymbolTable();
     
     private int semantErrors;
     private PrintStream errorStream;
 
     private void addClass(class_c c) {
-      if (classMap.containsKey(c.getName().getString())) {
+      if (classTable.probe(c.getName()) != null) {
         semantError(c).printf("class %s is defined multiple times.\n", c.getName());
       } else {
-        classMap.put(c.getName().getString(), c);
+        classTable.addId(c.getName(), c);
         class_c current = c;
         while (!current.getName().equals(TreeConstants.Object_)) {
-          current = classMap.get(current.getParent().getString());
+          current = (class_c)classTable.lookup(current.getParent());
           if (current == null) {
             break;
           } 
@@ -28,6 +28,57 @@ class ClassTable {
             break;
           }
         }
+      }
+    }
+
+    public class_c getClass(AbstractSymbol s) {
+      // get s's correpnding class
+      return (class_c)classTable.lookup(s);
+    }
+
+    public boolean inherits(AbstractSymbol sub, AbstractSymbol base) {
+      class_c current = getClass(sub);
+      while (!current.getName().equals(base)) {
+        if (current.getName().equals(TreeConstants.Object_)) {
+          return false;
+        }
+        current = getClass(current.getParent());
+      }
+      return true;
+    }
+
+    public void checkInherits(
+        AbstractSymbol sub, AbstractSymbol base, AbstractSymbol currentClass, TreeNode t) {
+      if (!inherits(sub, base)) {
+        semantError(getClass(currentClass).getFilename(), t).printf(
+            "%s is not sub type of %s\n", sub, base);
+      }
+    }
+
+    /**
+     * return the nearest common ancestor type.
+     *
+     * */
+    public AbstractSymbol commonAncestor(AbstractSymbol t1, AbstractSymbol t2) {
+      Stack<AbstractSymbol> s1 = ancestors(t1);
+      Stack<AbstractSymbol> s2 = ancestors(t2);
+      AbstractSymbol c1 = s1.pop();
+      AbstractSymbol c2 = s2.pop();
+      AbstractSymbol prev = c1;
+      while(!s1.empty() && !s1.empty() && c1.equals(c2)) {
+        prev = c1;
+        c1 = s1.pop();
+        c2 = s2.pop();
+      }
+      return prev;
+    }
+
+    private Stack<AbstractSymbol> ancestors(AbstractSymbol t) {
+      Stack<AbstractSymbol> s = new Stack<AbstractSymbol>();
+      s.push(t);
+      while (!t.equals(TreeConstants.Object_)) {
+        t = getClass(t).getParent();
+        s.push(t);
       }
     }
 
@@ -201,6 +252,7 @@ class ClassTable {
     public ClassTable(Classes cls) {
 	semantErrors = 0;
 	errorStream = System.err;
+        classTable.enterScope();
         installBasicClasses();
         for (Enumeration e = cls.getElements(); e.hasMoreElements();){
           class_c c = (class_c)e.nextElement();
@@ -251,6 +303,16 @@ class ClassTable {
     /** Returns true if there are any static semantic errors. */
     public boolean errors() {
 	return semantErrors != 0;
+    }
+
+    public void semantErrorValNotDefine(AbstractSymbol currentClass, AbstractSymbol val, TreeNode t) {
+      semantError(getClass(currentClass).getFilename(), t)
+        .printf("%s is not defined.\n", val);
+    }
+
+    public void semantErrorMethodArgsNotRight(AbstractSymbol currentClass, TreeNode t, int provided, int expected) {
+      semantError(getClass(currentClass).getFilename(), t)
+        .printf("Method needs %d args, but provide %d.", expected, provided);
     }
 }
 			  
