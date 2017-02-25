@@ -1,6 +1,7 @@
 import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Stack;
 import java.util.Enumeration;
 
 /** This class may be used to contain the semantic information such as
@@ -87,6 +88,7 @@ class ClassTable {
         t = getClass(t).getParent();
         s.push(t);
       }
+      return s;
     }
 
     /** Creates data structures representing basic Cool classes (Object,
