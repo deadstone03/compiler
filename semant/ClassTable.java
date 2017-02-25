@@ -12,6 +12,13 @@ class ClassTable {
     private int semantErrors;
     private PrintStream errorStream;
 
+    public AbstractSymbol self2real(AbstractSymbol t, AbstractSymbol c) {
+      if (t.equals(TreeConstants.SELF_TYPE)) {
+        return c;
+      }
+      return t;
+    }
+
     private void addClass(class_c c) {
       if (classTable.probe(c.getName()) != null) {
         semantError(c).printf("class %s is defined multiple times.\n", c.getName());
@@ -310,9 +317,10 @@ class ClassTable {
         .printf("%s is not defined.\n", val);
     }
 
-    public void semantErrorMethodArgsNotRight(AbstractSymbol currentClass, TreeNode t, int provided, int expected) {
+    public void semantErrorMethodArgsNotRight(AbstractSymbol currentClass, TreeNode t, AbstractSymbol c, AbstractSymbol m, int provided, int expected) {
       semantError(getClass(currentClass).getFilename(), t)
-        .printf("Method needs %d args, but provide %d.", expected, provided);
+        .printf("Method %s.%s needs %d args, but provide %d.",
+            c, m, expected, provided);
     }
 }
 			  

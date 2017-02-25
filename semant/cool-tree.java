@@ -273,12 +273,21 @@ class programc extends Program {
     public void semant() {
 	/* ClassTable constructor may do some semantic analysis */
 	ClassTable classTable = new ClassTable(classes);
+        // valEnv is val -> type
         SymbolTable valEnv = new SymbolTable();
+        // method is className -> (methodName -> types)
         SymbolTable methodEnv = new SymbolTable();
         valEnv.enterScope();
         methodEnv.enterScope();
 	
-	/* some semantic analysis code may go here */
+        // get all head semant, it may be used in attr and other method
+        // the method may also used outside the class, and the class may defined
+        // after the current class. So need to extract method head first.
+        for (Enumeration e = classes.getElements(); e.hasMoreElements();) {
+          class_c c = (class_c)e.nextElement();
+          c.semant_method_head(classTable, valEnv, methodEnv);
+        }
+        // we already get all classes and all classes's method head
         for (Enumeration e = classes.getElements(); e.hasMoreElements();) {
           class_c c = (class_c)e.nextElement();
           c.semant(classTable, valEnv, methodEnv);
@@ -349,10 +358,8 @@ class class_c extends Class_ {
         out.println(Utilities.pad(n + 2) + ")");
     }
 
-    public void semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv) {
-      valEnv.enterScope();
-      methodEnv.enterScope();
-      // get all head semant, it may be used in attr and other method
+    public void semant_method_head(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv) {
+      methodEnv.addId(getName(), new SymbolTable());
       for (Enumeration e = features.getElements(); e.hasMoreElements();) {
         Feature f = (Feature)e.nextElement();
         if (f instanceof method) {
@@ -360,6 +367,12 @@ class class_c extends Class_ {
           m.head_semant(classTable, valEnv, methodEnv, getName());
         }
       }
+    }
+
+    public void semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv) {
+      valEnv.enterScope();
+      // self's type is current class.
+      valEnv.addId(TreeConstants.self, getName());
       // get all attr, it may be used in method
       // later attr can use early attr, early attr can not use later attr
       for (Enumeration e = features.getElements(); e.hasMoreElements();) {
@@ -376,7 +389,6 @@ class class_c extends Class_ {
         }
       }
       valEnv.exitScope();
-      methodEnv.exitScope();
     }
 }
 
@@ -428,31 +440,34 @@ class method extends Feature {
 
     public void semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
       valEnv.enterScope();
-      methodEnv.enterScope();
       for (Enumeration e = formals.getElements(); e.hasMoreElements();) {
         Formal f = (Formal)e.nextElement();
         f.semant(classTable, valEnv, methodEnv, currentClass);
       }
       AbstractSymbol eT = expr.semant(classTable, valEnv, methodEnv, currentClass);
-      classTable.checkInherits(eT, return_type, currentClass, this);
-      methodEnv.exitScope();
+      classTable.checkInherits(
+          eT, classTable.self2real(return_type, currentClass), currentClass, this);
       valEnv.exitScope();
     }
     
     public void head_semant(
         ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
       valEnv.enterScope();
-      methodEnv.enterScope();
       List<AbstractSymbol> types = new ArrayList<AbstractSymbol>();
       for (Enumeration e = formals.getElements(); e.hasMoreElements();) {
         Formal f = (Formal)e.nextElement();
         AbstractSymbol ft = f.semant(classTable, valEnv, methodEnv, currentClass);
-        types.add(ft);
+        types.add(classTable.self2real(ft, currentClass));
       }
-      types.add(return_type);
+      types.add(classTable.self2real(return_type, currentClass));
+      AbstractSymbol classMethods = ((SymbolTable)methodEnv.lookup(currentClass));
+      if (classMethods.probe(getName()) != null) {
+        classTable.semantError(
+            classTable.getClass(currentClass).getFilename(), this)
+          .printf("method %s defined multiple times.\n", getName());
+      }
+      classMethods.addId(name, types);
       valEnv.exitScope();
-      methodEnv.exitScope();
-      methodEnv.addId(name, types);
     }
 }
 
@@ -497,16 +512,20 @@ class attr extends Feature {
     }
 
     public void semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
-      // TODO(xingdai): impl
       // Get a3's type t3, check t3 <= a2
       // here you only need to check type, don't need to set since the type is
       // already set.
       AbstractSymbol initT = init.semant(classTable, valEnv, methodEnv, currentClass);
+      AbstractSymbol resT = classTable.self2real(type_decl, currentClass);
       if (!initT.equals(TreeConstants.No_type)) {
-          classTable.checkInherits(initT, type_decl, currentClass, this);
-      } else {
-        valEnv.addId(name, type_decl);
+          classTable.checkInherits(initT, resT, currentClass, this);
       }
+      if (valEnv.probe(name) != null) {
+        classTable.semantError(
+            classTable.getClass(currentClass).getFilename(), this)
+          .printf("%s defined multiple times.\n", getName());
+      }
+      valEnv.addId(name, resT);
     }
 }
 
@@ -546,7 +565,13 @@ class formalc extends Formal {
     }
     public AbstractSymbol semant(
         ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
-      valEnv.addId(name, type_decl);
+      if (valEnv.probe(name) != null) {
+        classTable.semantError(
+            classTable.getClass(currentClass).getFilename(), this)
+          .printf("%s defined multiple times.\n", getName());
+      }
+      valEnv.addId(name,
+          classTable.self2real(type_decl, currentClass));
       return type_decl;
     }
 }
@@ -572,6 +597,15 @@ class branch extends Case {
         type_decl = a2;
         expr = a3;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      valEnv.enterScope();
+      valEnv.addId(name, classTable.self2real(type_decl, currentClass));
+      AbstractSymbol eT = expr.semant(classTable, valEnv, methodEnv, currentClass);
+      valEnv.exitScope();
+      return eT;
+    }
+
     public TreeNode copy() {
         return new branch(lineNumber, copy_AbstractSymbol(name), copy_AbstractSymbol(type_decl), (Expression)expr.copy());
     }
@@ -611,6 +645,19 @@ class assign extends Expression {
         name = a1;
         expr = a2;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol type_name = (AbstractSymbol)valEnv.lookup(name);
+      AbstractSymbol eT = expr.semant(classTable, valEnv, methodEnv, currentClass);
+      if (type_name == null) {
+        classTable.semantErrorValNotDefine(currentClass, name, this);
+        type_name = eT;
+      } else {
+        classTable.checkInherits(eT, type_name, currentClass, this);
+      }
+      return set_type(type_name).get_type();
+    }
+
     public TreeNode copy() {
         return new assign(lineNumber, copy_AbstractSymbol(name), (Expression)expr.copy());
     }
@@ -620,7 +667,6 @@ class assign extends Expression {
         expr.dump(out, n+2);
     }
 
-    
     public void dump_with_types(PrintStream out, int n) {
         dump_line(out, n);
         out.println(Utilities.pad(n) + "_assign");
@@ -628,19 +674,7 @@ class assign extends Expression {
 	expr.dump_with_types(out, n + 2);
 	dump_type(out, n);
     }
-
-    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
-      AbstractSymbol type_name = (AbstractSymbol)valEnv.lookup(name);
-      AbstractSymbol eT = expr.semant(classTable, valEnv, methodEnv, currentClass);
-      if (type_name == null) {
-        classTable.semantErrorValNotDefine(currentClass, name, this);
-        return eT;
-      }
-      classTable.checkInherits(eT, type_name, currentClass, this);
-      return type_name;
-    }
 }
-
 
 /** Defines AST constructor 'static_dispatch'.
     <p>
@@ -668,15 +702,21 @@ class static_dispatch extends Expression {
 
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
       AbstractSymbol exprT = expr.semant(classTable, valEnv, methodEnv, currentClass);
-      if (exprT.equals(TreeConstants.SELF_TYPE)) {
-        exprT = currentClass;
-      }
-      classTable.checkInherits(exprT, type_name);
+      exprT = classTable.self2real(exprT, currentClass);
+      AbstractSymbol toType = classTable.self2real(type_name, currentClass);
+      classTable.checkInherits(exprT, toType);
 
-      List<AbstractSymbol> types =  (List<AbstractSymbol>)((SymbolTable)methodEnv.lookup(type_name).lookup(name));
-      // TODO if there is no such method, print error.
+      SymbolTable classMethods = (SymbolTable)methodEnv.lookup(toType);
+      if (classMethods.probe(name) == null) {
+        classTable.semantError(
+            classTable.getClass(currentClass).getFilename(),
+            this)
+          .printf("Class %s doesn't have method %s", toType, name);
+        return TreeConstants.No_type;
+      }
+      List<AbstractSymbol> types =  (List<AbstractSymbol>)(classMethods.lookup(name));
       int ind = 0;
-      for (Enumeration e = actual.getElements(); e.hasMoreElements() && ind < types.size();) {
+      for (Enumeration e = actual.getElements(); e.hasMoreElements() && ind < types.size() - 1;) {
         AbstractSymbol eT = e.semant(classTable, valEnv, methodEnv, currentClass);
         classTable.checkInherits(eT, types.get(ind));
         ind += 1;
@@ -687,15 +727,12 @@ class static_dispatch extends Expression {
         provideCount += 1;
         e.nextElement();
       }
-      if (provideCount > types.size() || ind < types.size()) {
+      if (provideCount > types.size() - 1 || ind < types.size() - 1) {
         classTable.semantErrorMethodArgsNotRight(
-            classTable.getClass(currentClass, this, provideCount, types.size());
+            currentClass, this, toType, name, provideCount, types.size() - 1);
       }
 
       AbstractSymbol returnT = types.get(types.size() - 1);
-      if (returnT.equals(TreeConstants.SELF_TYPE)) {
-        returnT = currentClass;
-      }
       return set_type(returnT).get_type();
     }
 
@@ -751,12 +788,19 @@ class dispatch extends Expression {
 
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
       AbstractSymbol exprT = expr.semant(classTable, valEnv, methodEnv, currentClass);
-      if (exprT.equals(TreeConstants.SELF_TYPE)) {
-        exprT = currentClass;
+      exprT = classTable.self2real(exprT, currentClass);
+
+      SymbolTable classMethods = (SymbolTable)methodEnv.lookup(exprT);
+      if (classMethods.probe(name) == null) {
+        classTable.semantError(
+            classTable.getClass(currentClass).getFilename(),
+            this)
+          .printf("Class %s doesn't have method %s", exprT, name);
+        return TreeConstants.No_type;
       }
-      List<AbstractSymbol> types =  (List<AbstractSymbol>)((SymbolTable)methodEnv.lookup(exprt).lookup(name));
+      List<AbstractSymbol> types =  (List<AbstractSymbol>)(classMethods.lookup(name));
       int ind = 0;
-      for (Enumeration e = actual.getElements(); e.hasMoreElements() && ind < types.size();) {
+      for (Enumeration e = actual.getElements(); e.hasMoreElements() && ind < types.size() - 1;) {
         AbstractSymbol eT = e.semant(classTable, valEnv, methodEnv, currentClass);
         classTable.checkInherits(eT, types.get(ind));
         ind += 1;
@@ -767,15 +811,12 @@ class dispatch extends Expression {
         provideCount += 1;
         e.nextElement();
       }
-      if (provideCount > types.size() || ind < types.size()) {
+      if (provideCount > types.size() - 1 || ind < types.size() - 1) {
         classTable.semantErrorMethodArgsNotRight(
-            classTable.getClass(currentClass, this, provideCount, types.size());
+            currentClass, this, exprT, name, provideCount, types.size() - 1);
       }
 
       AbstractSymbol returnT = types.get(types.size() - 1);
-      if (returnT.equals(TreeConstants.SELF_TYPE)) {
-        returnT = currentClass;
-      }
       return set_type(returnT).get_type();
     }
 
@@ -788,7 +829,6 @@ class dispatch extends Expression {
         dump_AbstractSymbol(out, n+2, name);
         actual.dump(out, n+2);
     }
-
     
     public void dump_with_types(PrintStream out, int n) {
         dump_line(out, n);
@@ -828,11 +868,12 @@ class cond extends Expression {
     }
 
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
-      AbstractSymbol predT = predT.semant(classTable, valEnv, methodEnv, currentClass);
-      classTable.checkInherits(predT, TreeConstants, currentClass, this);
+      AbstractSymbol predT = pred.semant(classTable, valEnv, methodEnv, currentClass);
+      classTable.checkInherits(predT, TreeConstants.Bool, currentClass, this);
       AbstractSymbol thenT = then_exp.semant(classTable, valEnv, methodEnv, currentClass);
       AbstractSymbol elseT = else_exp.semant(classTable, valEnv, methodEnv, currentClass);
-      return classTable.commonAncestor(thenT, elseT);
+      AbstractSymbol resT = classTable.commonAncestor(thenT, elseT);
+      return set_type(resT).get_type();
     }
 
     public TreeNode copy() {
@@ -896,7 +937,7 @@ class loop extends Expression {
       classTable.checkInherits(predT, TreeConstants.Bool);
       AbstractSymbol bodyT = body.semant(classTable, valEnv, methodEnv, currentClass);
       // bodyT is not used, the code may not go into the loop.
-      return TreeConstants.Object_;
+      return set_type(TreeConstants.Object_).get_type();
     }
 }
 
@@ -921,7 +962,18 @@ class typcase extends Expression {
 
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
       // TODO(xingdai): impl
-      return currentClass;
+      expr.semant(classTable, valEnv, methodEnv, currentClass);
+      AbstractSymbol resT = null;
+      for (Enumeration e = cases.getElements(); e.hasMoreElements();) {
+        Case c = (Case)g.nextElement();
+        AbstractSymbol cT = c.semant(classTable, valEnv, methodEnv, currentClass);
+        if (resT == null) {
+          resT = cT;
+        } else {
+          resT = classTable.commonAncestor(resT, cT);
+        }
+      }
+      return set_type(resT).get_type();
     }
 
     public TreeNode copy() {
@@ -979,15 +1031,13 @@ class block extends Expression {
 
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
       valEnv.enterScope();
-      methodEnv.enterScope();
       AbstractSymbol type_name = TreeConstants.Object_;
       for (Enumeration e = body.getElements(); e.hasMoreElements();) {
         Expression expr = (Expression)e.nextElement();
         type_name = expr.semant(classTable, valEnv, methodEnv, currentClass);
       }
       valEnv.exitScope();
-      methodEnv.exitScope();
-      return type_name;
+      return set_type(type_name).get_type();
     }
 }
 
@@ -1018,14 +1068,13 @@ class let extends Expression {
 
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
       AbstractSymbol initT = init.semant(classTable, valEnv, methodEnv, currentClass);
-      classTable.checkInherits(initT, type_decl);
+      AbstractSymbol toType = classTable.self2real(type_decl, currentClass);
+      classTable.checkInherits(initT, toType, currentClass, this);
       valEnv.enterScope();
-      methodEnv.enterScope();
-      valEnv.addId(identifier, type_decl);
+      valEnv.addId(identifier, toType);
       AbstractSymbol bodyT = body.semant(classTable, valEnv, methodEnv, currentClass);
       valEnv.exitScope();
-      methodEnv.exitScope();
-      return bodyT;
+      return set_type(bodyT).get_type();
     }
 
     public TreeNode copy() {
@@ -1076,7 +1125,7 @@ class plus extends Expression {
       AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
       classTable.checkInherits(e1t, TreeConstants.Int);
       classTable.checkInherits(e2t, TreeConstants.Int);
-      return TreeConstants.Int;
+      return set_type(TreeConstants.Int).get_type();
     }
 
     public TreeNode copy() {
@@ -1123,7 +1172,8 @@ class sub extends Expression {
       AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
       classTable.checkInherits(e1t, TreeConstants.Int);
       classTable.checkInherits(e2t, TreeConstants.Int);
-      return TreeConstants.Int;
+
+      return set_type(TreeConstants.Int).get_type();
     }
 
     public TreeNode copy() {
@@ -1170,7 +1220,7 @@ class mul extends Expression {
       AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
       classTable.checkInherits(e1t, TreeConstants.Int);
       classTable.checkInherits(e2t, TreeConstants.Int);
-      return TreeConstants.Int;
+      return set_type(TreeConstants.Int).get_type();
     }
 
     public TreeNode copy() {
@@ -1217,7 +1267,7 @@ class divide extends Expression {
       AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
       classTable.checkInherits(e1t, TreeConstants.Int);
       classTable.checkInherits(e2t, TreeConstants.Int);
-      return TreeConstants.Int;
+      return set_type(TreeConstants.Int).get_type();
     }
 
     public TreeNode copy() {
@@ -1259,7 +1309,7 @@ class neg extends Expression {
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
       AbstractSymbol e1t = e1.semant(classTable, valEnv, methodEnv, currentClass);
       classTable.checkInherits(e1t, TreeConstants.Int);
-      return TreeConstants.Int;
+      return set_type(TreeConstants.Int).get_type();
     }
 
     public TreeNode copy() {
@@ -1304,7 +1354,7 @@ class lt extends Expression {
       AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
       classTable.checkInherits(e1t, TreeConstants.Int);
       classTable.checkInherits(e2t, TreeConstants.Int);
-      return TreeConstants.Bool;
+      return set_type(TreeConstants.Bool).get_type();
     }
 
     public TreeNode copy() {
@@ -1351,7 +1401,7 @@ class eq extends Expression {
       AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
       classTable.checkInherits(e1t, TreeConstants.Int);
       classTable.checkInherits(e2t, TreeConstants.Int);
-      return TreeConstants.Bool;
+      return set_type(TreeConstants.Bool).get_type();
     }
 
     public TreeNode copy() {
@@ -1398,7 +1448,7 @@ class leq extends Expression {
       AbstractSymbol e2t = e2.semant(classTable, valEnv, methodEnv, currentClass);
       classTable.checkInherits(e1t, TreeConstants.Int);
       classTable.checkInherits(e2t, TreeConstants.Int);
-      return TreeConstants.Bool;
+      return set_type(TreeConstants.Bool).get_type();
     }
 
     public TreeNode copy() {
@@ -1440,7 +1490,7 @@ class comp extends Expression {
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
       AbstractSymbol type_name = a1.semant(classTable, valEnv, methodEnv, currentClass);
       classTable.checkInherits(type_name, TreeConstants.Bool);
-      return TreeConstants.Bool;
+      return set_type(TreeConstants.Bool).get_type();
     }
 
     public TreeNode copy() {
@@ -1478,7 +1528,7 @@ class int_const extends Expression {
     }
 
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
-      return TreeConstants.Int;
+      return set_type(TreeConstants.Int).get_type();
     }
 
     public TreeNode copy() {
@@ -1516,7 +1566,7 @@ class bool_const extends Expression {
     }
 
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
-      return TreeConstants.Bool;
+      return set_type(TreeConstants.Bool).get_type();
     }
 
     public TreeNode copy() {
@@ -1555,7 +1605,7 @@ class string_const extends Expression {
 
     public AbstractSymbol semant(
         ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
-      return TreeConstants.Str;
+      return set_type(TreeConstants.Str).get_type();
     }
 
     public TreeNode copy() {
@@ -1596,10 +1646,7 @@ class new_ extends Expression {
 
     public AbstractSymbol semant(
         ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
-      if (type_name.equals(SELF_TYPE)) {
-        return currentClass;
-      }
-      return type_name;
+      return set_type(classTable.self2real(type_name, currentClass)).get_type();
     }
 
     public TreeNode copy() {
@@ -1639,7 +1686,7 @@ class isvoid extends Expression {
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
       AbstractSymbol type_name = e1.semant(classTable, valEnv, methodEnv, currentClass);
       // is the type-name need to be checked?
-      return TreeConstants.Bool;
+      return set_type(TreeConstants.Bool).get_type();
     }
 
     public TreeNode copy() {
@@ -1707,6 +1754,16 @@ class object extends Expression {
         super(lineNumber);
         name = a1;
     }
+
+    public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, SymbolTable methodEnv, AbstractSymbol currentClass) {
+      AbstractSymbol t = valEnv.probe(name);
+      if (t == null) {
+        classTable.semantErrorValNotDefine(currentClass, name, this);
+        t = TreeConstants.No_type;
+      }
+      return set_type(t).get_type();
+    }
+
     public TreeNode copy() {
         return new object(lineNumber, copy_AbstractSymbol(name));
     }
@@ -1714,7 +1771,6 @@ class object extends Expression {
         out.print(Utilities.pad(n) + "object\n");
         dump_AbstractSymbol(out, n+2, name);
     }
-
     
     public void dump_with_types(PrintStream out, int n) {
         dump_line(out, n);
