@@ -727,7 +727,6 @@ class static_dispatch extends Expression {
 
     public AbstractSymbol semant(ClassTable classTable, SymbolTable valEnv, AbstractSymbol currentClass) {
       AbstractSymbol exprT = expr.semant(classTable, valEnv, currentClass);
-      exprT = classTable.self2real(exprT, currentClass);
       AbstractSymbol toType = classTable.self2real(type_name, currentClass);
       classTable.checkInherits(
           classTable.self2real(exprT, currentClass),
@@ -764,6 +763,7 @@ class static_dispatch extends Expression {
       }
 
       AbstractSymbol returnT = types.get(types.size() - 1);
+      returnT = classTable.self2real(returnT, exprT);
       return set_type(returnT).get_type();
     }
 
