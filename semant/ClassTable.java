@@ -1,17 +1,108 @@
 import java.io.PrintStream;
 import java.util.HashMap;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Stack;
+import java.util.Queue;
 import java.util.Enumeration;
 
 /** This class may be used to contain the semantic information such as
  * the inheritance graph.  You may use it or not as you like: it is only
  * here to provide a container for the supplied methods.  */
 class ClassTable {
+    private Map<AbstractSymbol, List<class_c>> children = new HashMap<AbstractSymbol, List<class_c>>();
     private SymbolTable classTable = new SymbolTable();
+    // methodEnv is className -> (methodName -> types)
+    private SymbolTable methodEnv = new SymbolTable();
+    // attrEnv is className -> (attrName -> Type)
+    private SymbolTable attrEnv = new SymbolTable();
+    private List<class_c> classes = null;
     
     private int semantErrors;
     private PrintStream errorStream;
+
+    public boolean addAttr(AbstractSymbol c, AbstractSymbol name, AbstractSymbol type) {
+      if (getAttr(getClass(c).getParent(), name) != null) {
+        return false;
+      }
+      SymbolTable attrs = (SymbolTable)attrEnv.lookup(c);
+      if (attrs == null) {
+        attrs = new SymbolTable();
+        attrs.enterScope();
+        attrEnv.addId(c, attrs);
+      }
+      if (attrs.probe(name) != null) {
+        return false;
+      }
+      attrs.addId(name, type);
+      return true;
+    }
+
+    public AbstractSymbol getAttr(AbstractSymbol c, AbstractSymbol name) {
+      if (name.equals(TreeConstants.self)) {
+        return TreeConstants.SELF_TYPE;
+      }
+      while(!c.equals(TreeConstants.No_class)) {
+        SymbolTable attrs = (SymbolTable)attrEnv.lookup(c);
+        AbstractSymbol type_name = null;
+        if (attrs != null) {
+          type_name = (AbstractSymbol)attrs.lookup(name); 
+          if (type_name != null) {
+            return type_name;
+          }
+        }
+        c = getClass(c).getParent();
+      }
+      return null;
+    }
+    
+    public boolean addMethod(AbstractSymbol c, AbstractSymbol name, List<AbstractSymbol> types) {
+      List<AbstractSymbol> pTypes = getMethod(getClass(c).getParent(), name);
+      if (pTypes != null) {
+        if (pTypes.size() != types.size()) {
+          return false;
+        }
+        for (int i = 0; i < pTypes.size(); ++i) {
+          if (!pTypes.get(i).equals(types.get(i))) {
+            return false;
+          }
+        }
+      }
+      SymbolTable methods = (SymbolTable)methodEnv.lookup(c);
+      if (methods == null) {
+        methods = new SymbolTable();
+        methods.enterScope();
+        methodEnv.addId(c, methods);
+      }
+      if (methods.probe(name) != null) {
+        return false;
+      }
+      methods.addId(name, types);
+      return true;
+    }
+
+    public List<AbstractSymbol> probeMethod(AbstractSymbol c, AbstractSymbol name) {
+      SymbolTable methods = (SymbolTable)methodEnv.lookup(c);
+      if (methods == null) {
+        return null;
+      }
+      return (List<AbstractSymbol>)methods.lookup(name);
+    }
+
+    public List<AbstractSymbol> getMethod(AbstractSymbol c, AbstractSymbol name) {
+      while(!c.equals(TreeConstants.No_class)) {
+        SymbolTable methods = (SymbolTable)methodEnv.lookup(c);
+        if (methods != null) {
+          List<AbstractSymbol> types = (List<AbstractSymbol>)methods.lookup(name);
+          if (types != null) {
+            return types;
+          }
+        }
+        c = getClass(c).getParent();
+      }
+      return null;
+    }
 
     public AbstractSymbol self2real(AbstractSymbol t, AbstractSymbol c) {
       if (t.equals(TreeConstants.SELF_TYPE)) {
@@ -21,13 +112,34 @@ class ClassTable {
     }
 
     private void addClass(class_c c) {
+      if (c.getName().equals(TreeConstants.SELF_TYPE)) {
+        semantError(c).printf("Redefine SELF_TYPE class.\n");
+      }
+      if (c.getParent().equals(TreeConstants.Str)) {
+        semantError(c).printf("class %s inherits from String class.\n", c.getName());
+      } else if (c.getParent().equals(TreeConstants.Int)) {
+        semantError(c).printf("class %s inherits from Int class.\n", c.getName());
+      } else if (c.getParent().equals(TreeConstants.Bool)) {
+        semantError(c).printf("class %s inherits from Bool class.\n", c.getName());
+      } else if (c.getParent().equals(TreeConstants.SELF_TYPE)) {
+        semantError(c).printf("class %s inherits from SELF_TYPE class.\n", c.getName());
+      }
+
       if (classTable.probe(c.getName()) != null) {
         semantError(c).printf("class %s is defined multiple times.\n", c.getName());
       } else {
+        // check if there is circle inherit or not
         classTable.addId(c.getName(), c);
+        AbstractSymbol p = c.getParent();
+        List<class_c> cs = children.get(p);
+        if (cs == null) {
+          cs = new ArrayList<class_c>();
+          children.put(p, cs);
+        }
+        cs.add(c);
         class_c current = c;
         while (!current.getName().equals(TreeConstants.Object_)) {
-          current = (class_c)classTable.lookup(current.getParent());
+          current = getClass(current.getParent());
           if (current == null) {
             break;
           } 
@@ -40,17 +152,48 @@ class ClassTable {
     }
 
     public class_c getClass(AbstractSymbol s) {
+      if (s.equals(TreeConstants.SELF_TYPE)) {
+        return (class_c)classTable.lookup(TreeConstants.Object_);
+      }
       // get s's correpnding class
       return (class_c)classTable.lookup(s);
     }
 
+    public List<class_c> getClasses() {
+      // return topologic class list
+      // base to sub
+      if (classes == null) {
+        classes = new ArrayList<class_c>();
+        ArrayList<class_c> q = new ArrayList<class_c>();
+        class_c c = getClass(TreeConstants.Object_);
+        q.add(c);
+        while(!q.isEmpty()) {
+          c = q.remove(0);
+          classes.add(c);
+          List<class_c> cs = children.get(c.getName());
+          if (cs != null) {
+            for (class_c cc: cs) {
+              q.add(cc);
+            }
+          }
+        }
+      }
+      return classes;
+    }
+
     public boolean inherits(AbstractSymbol sub, AbstractSymbol base) {
       class_c current = getClass(sub);
+      if (current == null) {
+        return false;
+      }
       while (!current.getName().equals(base)) {
         if (current.getName().equals(TreeConstants.Object_)) {
           return false;
         }
         current = getClass(current.getParent());
+        if (current == null) {
+          return false;
+        }
       }
       return true;
     }
@@ -60,6 +203,16 @@ class ClassTable {
       if (!inherits(sub, base)) {
         semantError(getClass(currentClass).getFilename(), t).printf(
             "%s is not sub type of %s\n", sub, base);
+      }
+    }
+
+    public void checkType(AbstractSymbol type_name, AbstractSymbol currentClass, TreeNode t) {
+      if (type_name.equals(TreeConstants.SELF_TYPE)) {
+        return;
+      }
+      if (getClass(type_name) == null) {
+        semantError(getClass(currentClass).getFilename(), t).printf(
+            "class %s is not defined\n", type_name);
       }
     }
 
@@ -73,8 +226,11 @@ class ClassTable {
       AbstractSymbol c1 = s1.pop();
       AbstractSymbol c2 = s2.pop();
       AbstractSymbol prev = c1;
-      while(!s1.empty() && !s1.empty() && c1.equals(c2)) {
+      while(c1.equals(c2)) {
         prev = c1;
+        if (s1.empty() || s2.empty()) {
+          break;
+        }
         c1 = s1.pop();
         c2 = s2.pop();
       }
@@ -262,10 +418,23 @@ class ClassTable {
 	semantErrors = 0;
 	errorStream = System.err;
         classTable.enterScope();
+        methodEnv.enterScope();
+        attrEnv.enterScope();
         installBasicClasses();
         for (Enumeration e = cls.getElements(); e.hasMoreElements();){
           class_c c = (class_c)e.nextElement();
           addClass(c);
+        }
+        for (Enumeration e = cls.getElements(); e.hasMoreElements();){
+          class_c c = (class_c)e.nextElement();
+          if (getClass(c.getParent()) == null) {
+            semantError(c).printf(
+                "Class %s inherits from undefined class %s.\n",
+                c.getName(), c.getParent());
+          }
+        }
+        if (getClass(TreeConstants.Main) == null) {
+          semantError().printf("Class Main is not defined.\n");
         }
     }
 
