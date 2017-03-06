@@ -23,6 +23,8 @@ PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
 
 import java.io.PrintStream;
 import java.util.Vector;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.Enumeration;
 
 class CgenNode extends class_ {
@@ -41,6 +43,14 @@ class CgenNode extends class_ {
     /** Does this node correspond to a basic class? */
     private int basic_status;
 
+    /** class tag */
+    private int tag;
+
+    /** attributes include parent. **/
+    private List<attr> attrs = null;
+
+    private CgenClassTable table = null;
+
     /** Constructs a new CgenNode to represent class "c".
      * @param c the class
      * @param basic_status is this class basic or not
@@ -51,6 +61,7 @@ class CgenNode extends class_ {
 	this.parent = null;
 	this.children = new Vector();
 	this.basic_status = basic_status;
+        this.table = table;
 	AbstractTable.stringtable.addString(name.getString());
     }
 
@@ -91,6 +102,82 @@ class CgenNode extends class_ {
      * */
     boolean basic() { 
 	return basic_status == Basic; 
+    }
+
+    /**
+     * set class tag.
+     */
+    public void setTag(int t) {
+      tag = t;
+    }
+
+    /**
+     * get class Tag
+     */
+    public int getTag() {
+      return tag;
+    }
+
+    public List<attr> getAttrs() {
+      if (attrs != null) {
+        return attrs;
+      }
+      if (basic()) {
+        attrs = new ArrayList<attr>();
+      } else {
+        attrs = new ArrayList<attr>(getParentNd().getAttrs());
+        for (Enumeration e = features.getElements(); e.hasMoreElements();) {
+          Feature f = (Feature)e.nextElement();
+          if (f instanceof attr) {
+            attrs.add((attr)f);
+          }
+        }
+      }
+      return attrs;
+    }
+
+    public int getAttrNum() {
+      return getAttrs().size();
+    }
+
+    private void emitAttrs(PrintStream str) {
+      for(attr a: getAttrs()) {
+        emitAttr(a, str);
+      }
+    }
+
+    private void emitAttr(attr a, PrintStream str) {
+      if (a.type_decl.equals(TreeConstants.Int)) {
+        str.print(CgenSupport.WORD); ((IntSymbol)AbstractTable.inttable.addString("0")).codeRef(str); str.println("");
+      } else if (a.type_decl.equals(TreeConstants.Bool)) {
+        str.print(CgenSupport.WORD); BoolConst.falsebool.codeRef(str); str.println("");
+      } else if (a.type_decl.equals(TreeConstants.Str)) {
+       str.print(CgenSupport.WORD); ((StringSymbol)AbstractTable.stringtable.addString("")).codeRef(str); str.println("");
+      } else {
+        // everything else should be an Object, and should be set to void
+        str.println(CgenSupport.WORD + "0");
+      }
+    }
+
+    public void defPrototype(PrintStream str) {
+      // Add -1 eye catcher
+      str.println(CgenSupport.WORD + "-1");
+      // class prototype label
+      CgenSupport.emitProtObjRef(getName(), str); str.printf(CgenSupport.LABEL);
+      // class tag
+      str.println(CgenSupport.WORD + getTag());
+      // class size
+      str.println(CgenSupport.WORD +
+          (CgenSupport.DEFAULT_OBJFIELDS + getAttrNum()));
+      // dispatch pointer
+      str.println(CgenSupport.WORD + "");
+      // attributes
+      emitAttrs(str);
+
+      for (Enumeration e = getChildren(); e.hasMoreElements();) {
+        CgenNode c = (CgenNode)e.nextElement();
+        c.defPrototype(str);
+      }
     }
 }
     

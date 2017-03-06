@@ -424,12 +424,13 @@ class attr extends Feature {
         type_decl = a2;
         init = a3;
     }
+
     public TreeNode copy() {
         return new attr(lineNumber, copy_AbstractSymbol(name), copy_AbstractSymbol(type_decl), (Expression)init.copy());
     }
     public void dump(PrintStream out, int n) {
-        out.print(Utilities.pad(n) + "attr\n");
-        dump_AbstractSymbol(out, n+2, name);
+          out.print(Utilities.pad(n) + "attr\n");
+          dump_AbstractSymbol(out, n+2, name);
         dump_AbstractSymbol(out, n+2, type_decl);
         init.dump(out, n+2);
     }

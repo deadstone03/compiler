@@ -40,7 +40,6 @@ class CgenClassTable extends SymbolTable {
     private int intclasstag;
     private int boolclasstag;
 
-
     // The following methods emit code for constants and global
     // declarations.
 
@@ -349,6 +348,7 @@ class CgenClassTable extends SymbolTable {
 	AbstractSymbol name = nd.getName();
 	if (probe(name) != null) return;
 	nds.addElement(nd);
+        nd.setTag(nds.size());
 	addId(name, nd);
     }
 
@@ -374,22 +374,20 @@ class CgenClassTable extends SymbolTable {
     /** Constructs a new class table and invokes the code generator */
     public CgenClassTable(Classes cls, PrintStream str) {
 	nds = new Vector();
-
 	this.str = str;
-
-	stringclasstag = 0 /* Change to your String class tag here */;
-	intclasstag =    0 /* Change to your Int class tag here */;
-	boolclasstag =   0 /* Change to your Bool class tag here */;
 
 	enterScope();
 	if (Flags.cgen_debug) System.out.println("Building CgenClassTable");
 	
 	installBasicClasses();
+
+	stringclasstag = ((CgenNode)lookup(TreeConstants.Str)).getTag(); /* Change to your String class tag here */;
+	intclasstag =    ((CgenNode)lookup(TreeConstants.Int)).getTag(); /* Change to your Int class tag here */;
+	boolclasstag =   ((CgenNode)lookup(TreeConstants.Bool)).getTag(); /* Change to your Bool class tag here */;
 	installClasses(cls);
 	buildInheritanceTree();
 
 	code();
-
 	exitScope();
     }
 
@@ -409,6 +407,8 @@ class CgenClassTable extends SymbolTable {
 	//                   - prototype objects
 	//                   - class_nameTab
 	//                   - dispatch tables
+	if (Flags.cgen_debug) System.out.println("coding prototype");
+        codePrototypes();
 
 	if (Flags.cgen_debug) System.out.println("coding global text");
 	codeGlobalText();
@@ -422,6 +422,11 @@ class CgenClassTable extends SymbolTable {
     /** Gets the root of the inheritance tree */
     public CgenNode root() {
 	return (CgenNode)probe(TreeConstants.Object_);
+    }
+
+    public void codePrototypes() {
+      CgenNode r = root();
+      r.defPrototype(str);
     }
 }
 			  
