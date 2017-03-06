@@ -347,8 +347,8 @@ class CgenClassTable extends SymbolTable {
     private void installClass(CgenNode nd) {
 	AbstractSymbol name = nd.getName();
 	if (probe(name) != null) return;
+        nd.setTag(nds.size()); // tag start from 0
 	nds.addElement(nd);
-        nd.setTag(nds.size());
 	addId(name, nd);
     }
 
@@ -409,6 +409,8 @@ class CgenClassTable extends SymbolTable {
 	//                   - dispatch tables
 	if (Flags.cgen_debug) System.out.println("coding prototype");
         codePrototypes();
+	if (Flags.cgen_debug) System.out.println("class nameTab");
+        codeClassnameTab();
 
 	if (Flags.cgen_debug) System.out.println("coding global text");
 	codeGlobalText();
@@ -427,6 +429,16 @@ class CgenClassTable extends SymbolTable {
     public void codePrototypes() {
       CgenNode r = root();
       r.defPrototype(str);
+    }
+    public void codeClassnameTab() {
+      str.print(CgenSupport.CLASSNAMETAB + CgenSupport.LABEL);
+      for (Enumeration e = nds.elements(); e.hasMoreElements();) {
+        CgenNode n = (CgenNode)e.nextElement();
+        str.print(CgenSupport.WORD);
+        ((StringSymbol)AbstractTable.stringtable.lookup(n.getName().getString()))
+          .codeRef(str);
+        str.println("");
+      }
     }
 }
 			  
