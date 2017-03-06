@@ -236,7 +236,20 @@ class CgenNode extends class_ {
         c.defDispatchTab(str);
       }
     }
-}
-    
 
-    
+    public void emitAttrInitializer(attr a, PrintStream str) {
+    }
+
+    public void defInitializer(PrintStream str) {
+      CgenSupport.emitInitRef(getName(), str); str.print(CgenSupport.LABEL);
+
+      for (attr a: getAttrs()) {
+        emitAttrInitializer(a, str);
+      }
+
+      for (Enumeration e = getChildren(); e.hasMoreElements();) {
+        CgenNode c = (CgenNode)e.nextElement();
+        c.defInitializer(str);
+      }
+    }
+}

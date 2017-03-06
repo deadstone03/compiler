@@ -413,7 +413,6 @@ class CgenClassTable extends SymbolTable {
         codeClassnameTab();
 	if (Flags.cgen_debug) System.out.println("dispatch tables");
         codeDispatchTab();
-
 	if (Flags.cgen_debug) System.out.println("coding global text");
 	codeGlobalText();
 
@@ -421,6 +420,9 @@ class CgenClassTable extends SymbolTable {
 	//                   - object initializer
 	//                   - the class methods
 	//                   - etc...
+	if (Flags.cgen_debug) System.out.println("code object initializer");
+        codeObjectInitializers();
+        
     }
 
     /** Gets the root of the inheritance tree */
@@ -447,6 +449,10 @@ class CgenClassTable extends SymbolTable {
       CgenNode r = root();
       r.defDispatchTab(str);
     }
+
+    public void codeObjectInitializers() {
+      CgenNode r = root();
+      r.defInitializer(str);
+    }
 }
-			  
-    
+

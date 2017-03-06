@@ -51,7 +51,7 @@ class StringSymbol extends AbstractSymbol {
 	s.print(CgenSupport.WORD);
 
 	/* Add code to reference the dispatch table for class String here */
-
+        CgenSupport.emitDispTableRef(TreeConstants.Str, s);
 	s.println("");		// dispatch table
 	s.print(CgenSupport.WORD); lensym.codeRef(s); s.println(""); // length
 	CgenSupport.emitStringConstant(str, s); // ascii string
