@@ -363,6 +363,7 @@ class method extends Feature {
     public Formals formals;
     public AbstractSymbol return_type;
     public Expression expr;
+    public AbstractSymbol class_name;
     /** Creates "method" AST node. 
       *
       * @param lineNumber the line in the source file from which this node came.

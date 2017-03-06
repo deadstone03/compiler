@@ -411,6 +411,8 @@ class CgenClassTable extends SymbolTable {
         codePrototypes();
 	if (Flags.cgen_debug) System.out.println("class nameTab");
         codeClassnameTab();
+	if (Flags.cgen_debug) System.out.println("dispatch tables");
+        codeDispatchTab();
 
 	if (Flags.cgen_debug) System.out.println("coding global text");
 	codeGlobalText();
@@ -439,6 +441,11 @@ class CgenClassTable extends SymbolTable {
           .codeRef(str);
         str.println("");
       }
+    }
+
+    public void codeDispatchTab() {
+      CgenNode r = root();
+      r.defDispatchTab(str);
     }
 }
 			  

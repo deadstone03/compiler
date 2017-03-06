@@ -16,3 +16,7 @@ class Bar inherits Foo{
   b: Int;
   f():Int { 1234 };
 };
+
+class Bazz inherits Bar{
+  c: Int;
+};

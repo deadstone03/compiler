@@ -49,6 +49,10 @@ class CgenNode extends class_ {
     /** attributes include parent. **/
     private List<attr> attrs = null;
 
+    /** methods include parent, and will override. **/
+    private List<method> methods = null;
+
+
     private CgenClassTable table = null;
 
     /** Constructs a new CgenNode to represent class "c".
@@ -135,6 +139,37 @@ class CgenNode extends class_ {
       }
       return attrs;
     }
+    
+    public List<method> getMethods() {
+      if (methods != null) {
+        return methods;
+      }
+      
+      if (getName().equals(TreeConstants.No_class)) {
+        methods = new ArrayList();
+      } else {
+        methods = new ArrayList<method>(getParentNd().getMethods());
+        for (Enumeration e = features.getElements(); e.hasMoreElements();) {
+          Feature f = (Feature)e.nextElement();
+          if (f instanceof method) {
+            method m = (method)f;
+            m.class_name = getName();
+            int i;
+            for (i = 0; i < methods.size(); ++i) {
+              if (methods.get(i).name.equals(m.name)) {
+                // override
+                methods.set(i, m);
+                break;
+              }
+            }
+            if (i == methods.size()) {
+              methods.add(m);
+            }
+          }
+        }
+      }
+      return methods;
+    }
 
     public int getAttrNum() {
       return getAttrs().size();
@@ -170,13 +205,35 @@ class CgenNode extends class_ {
       str.println(CgenSupport.WORD +
           (CgenSupport.DEFAULT_OBJFIELDS + getAttrNum()));
       // dispatch pointer
-      str.println(CgenSupport.WORD + "");
+      str.print(CgenSupport.WORD); CgenSupport.emitDispTableRef(getName(), str); str.println("");
       // attributes
       emitAttrs(str);
 
       for (Enumeration e = getChildren(); e.hasMoreElements();) {
         CgenNode c = (CgenNode)e.nextElement();
         c.defPrototype(str);
+      }
+    }
+
+    public void emitMethods(PrintStream str) {
+      for (method m: getMethods()) {
+        emitMethod(m, str);
+      }
+    }
+
+    public void emitMethod(method m, PrintStream str) {
+        str.print(CgenSupport.WORD); CgenSupport.emitMethodRef(
+            m.class_name, m.name, str); str.println("");
+    }
+
+    public void defDispatchTab(PrintStream str) {
+      CgenSupport.emitDispTableRef(getName(), str);str.print(CgenSupport.LABEL);
+
+      emitMethods(str);
+
+      for (Enumeration e = getChildren(); e.hasMoreElements();) {
+        CgenNode c = (CgenNode)e.nextElement();
+        c.defDispatchTab(str);
       }
     }
 }
