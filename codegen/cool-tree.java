@@ -940,7 +940,10 @@ class block extends Expression {
       * you wish.)
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+        for (Enumeration e = body.getElements(); e.hasMoreElements();) {
+	    ((Expression)e.nextElement()).code(ct, cc, s);
+        }
     }
 
 
@@ -1042,15 +1045,34 @@ class plus extends Expression {
       * you wish.)
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
-      e1.code(s);
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      e1.code(ct, cc, s);
       CgenSupport.emitPush(CgenSupport.ACC, s);
-      e2.code(s);
+      e2.code(ct, cc, s);
+      CgenSupport.emitFetchInt(CgenSupport.ACC, CgenSupport.ACC, s);
       CgenSupport.emitPop(CgenSupport.T1, s);
+      CgenSupport.emitFetchInt(CgenSupport.T1, CgenSupport.T1, s);
       CgenSupport.emitAdd(CgenSupport.ACC, CgenSupport.T1, CgenSupport.ACC, s);
+
+      // store the result
+      CgenSupport.emitPush(CgenSupport.ACC, s);
+      // Create a new int object
+      s.print(CgenSupport.LA + CgenSupport.ACC + " ");
+      CgenSupport.emitProtObjRef(TreeConstants.Int, s);
+      s.println("");
+      // Save the current FP
+      CgenSupport.emitPush(CgenSupport.FP, s);
+      // Object.copy arg in ACC and return in ACC.
+      s.print(CgenSupport.JAL);
+      CgenSupport.emitMethodRef(TreeConstants.Object_, TreeConstants.copy, s);
+      s.println("");
+      // pop old fp
+      CgenSupport.emitPop(CgenSupport.FP, s);
+      // pop the result
+      CgenSupport.emitPop(CgenSupport.T1, s);
+      // Store the result
+      CgenSupport.emitStoreInt(CgenSupport.T1, CgenSupport.ACC, s);
     }
-
-
 }
 
 
