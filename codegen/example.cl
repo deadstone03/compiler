@@ -3,20 +3,6 @@
     as possible.
  *)
 
-class Main {
+class Main inherits IO {
   main():Int { 0 };
-};
-
-class Foo {
-  a: Int;
-  f():Int { 1234 };
-};
-
-class Bar inherits Foo{
-  b: Int;
-  f():Int { 1234 };
-};
-
-class Bazz inherits Bar{
-  c: Int;
 };

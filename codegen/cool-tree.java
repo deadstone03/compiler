@@ -155,8 +155,13 @@ abstract class Expression extends TreeNode {
         else
             { out.println(Utilities.pad(n) + ": _no_type"); }
     }
-    public abstract void code(PrintStream s);
-
+    public void code(PrintStream s) {
+      s.println("Not implemeted yet.");
+    }
+    
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      s.println("Not implemeted yet.");
+    }
 }
 
 
@@ -402,6 +407,35 @@ class method extends Feature {
 	expr.dump_with_types(out, n + 2);
     }
 
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream str) {
+      // add formals definintion to classTable
+      ct.env.enterScope();
+      int i = 1;
+      for(Enumeration e = formals.getElements(); e.hasMoreElements();) {
+        formal f = (formal)e.nextElement();
+        ct.env.addId(f.name,
+            CgenSupport.offsetReg(CgenSupport.FP, i));
+        i++;
+      }
+      // save self to s0
+      CgenSupport.emitMove(CgenSupport.SELF, CgenSupport.ACC, str);
+      // add self to env
+      ct.env.addId(TreeConstants.self, CgenSupport.SELF);
+      // save current sp to the new fp
+      CgenSupport.emitMove(CgenSupport.FP, CgenSupport.SP, str);
+      // save RA to current top of sp
+      CgenSupport.emitPush(CgenSupport.RA, str);
+      // process the internal expressions
+      expr.code(ct, cc, str);
+      // load RA
+      CgenSupport.emitLoad(CgenSupport.RA, 1, CgenSupport.SP, str);
+      // pop SP back to the caller
+      int z = CgenSupport.WORD_SIZE * (1 + formals.getLength());
+      CgenSupport.emitAddiu(CgenSupport.SP, CgenSupport.SP, z, str);
+      // jump back to the caller's next
+      CgenSupport.emitReturn(str);
+      ct.env.exitScope();
+    }
 }
 
 
@@ -424,6 +458,12 @@ class attr extends Feature {
         name = a1;
         type_decl = a2;
         init = a3;
+    }
+    public void genCode(CgenClassTable classTable, int ind, PrintStream str) {
+      classTable.addId(name,
+          CgenSupport.getOffsetReg(CgenSupport.SELF, ind + CgenSupport.DEFAULT_OBJFIELDS));
+      init.code(str);
+      CgenSupport.emitStore(CgenSupport.ACC, ind + CgenSupport.DEFAULT_OBJFIELDS, CgenSupport.SELF, str);
     }
 
     public TreeNode copy() {
@@ -653,6 +693,44 @@ class dispatch extends Expression {
         name = a2;
         actual = a3;
     }
+
+    /** Generates code for this expression.  This method is to be completed 
+      * in programming assignment 5.  (You may add or remove parameters as
+      * you wish.)
+      * @param ct the CgenClassTable
+      * @param cc the current class type
+      * @param s the output stream 
+      * */
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      // Save the current FP
+      CgenSupport.emitPush(CgenSupport.FP, s);
+      // Push the actuall param in reverse order
+      for (int i = actual.getLength() - 1; i >=0; --i) {
+        Expression expr = (Expression)actual.getNth(i);
+        expr.code(ct, cc, s);
+        CgenSupport.emitPush(CgenSupport.ACC, s);
+      }
+
+      // generate the dispatched object and it will be in ACC
+      expr.code(ct, cc, s);
+
+      // caculate the jump address
+      // store dispatch table address to T1
+      CgenSupport.emitLoad(CgenSupport.T1, 2, CgenSupport.ACC, s);
+      
+      AbstractSymbol oT = expr.get_type();
+      oT = CgenSupport.getType(oT, cc);
+      CgenNode o = (CgenNode)ct.lookup(oT);
+      int ind = o.getMethodInd(name);
+      // Get the actuall method enter address
+      CgenSupport.emitLoad(CgenSupport.T1, ind, CgenSupport.T1, s);
+
+      // Jump to the callee
+      CgenSupport.emitJalr(CgenSupport.T1, s);
+      // pop old fp
+      CgenSupport.emitPop(CgenSupport.FP, s);
+    }
+
     public TreeNode copy() {
         return new dispatch(lineNumber, (Expression)expr.copy(), copy_AbstractSymbol(name), (Expressions)actual.copy());
     }
@@ -675,13 +753,6 @@ class dispatch extends Expression {
         }
         out.println(Utilities.pad(n + 2) + ")");
 	dump_type(out, n);
-    }
-    /** Generates code for this expression.  This method is to be completed 
-      * in programming assignment 5.  (You may add or remove parameters as
-      * you wish.)
-      * @param s the output stream 
-      * */
-    public void code(PrintStream s) {
     }
 
 
@@ -972,6 +1043,11 @@ class plus extends Expression {
       * @param s the output stream 
       * */
     public void code(PrintStream s) {
+      e1.code(s);
+      CgenSupport.emitPush(CgenSupport.ACC, s);
+      e2.code(s);
+      CgenSupport.emitPop(CgenSupport.T1, s);
+      CgenSupport.emitAdd(CgenSupport.ACC, CgenSupport.T1, CgenSupport.ACC, s);
     }
 
 
@@ -1018,6 +1094,11 @@ class sub extends Expression {
       * @param s the output stream 
       * */
     public void code(PrintStream s) {
+      e1.code(s);
+      CgenSupport.emitPush(CgenSupport.ACC, s);
+      e2.code(s);
+      CgenSupport.emitPop(CgenSupport.T1, s);
+      CgenSupport.emitSub(CgenSupport.ACC, CgenSupport.T1, CgenSupport.ACC, s);
     }
 
 
@@ -1064,6 +1145,11 @@ class mul extends Expression {
       * @param s the output stream 
       * */
     public void code(PrintStream s) {
+      e1.code(s);
+      CgenSupport.emitPush(CgenSupport.ACC, s);
+      e2.code(s);
+      CgenSupport.emitPop(CgenSupport.T1, s);
+      CgenSupport.emitMul(CgenSupport.ACC, CgenSupport.T1, CgenSupport.ACC, s);
     }
 
 
@@ -1110,6 +1196,11 @@ class divide extends Expression {
       * @param s the output stream 
       * */
     public void code(PrintStream s) {
+      e1.code(s);
+      CgenSupport.emitPush(CgenSupport.ACC, s);
+      e2.code(s);
+      CgenSupport.emitPop(CgenSupport.T1, s);
+      CgenSupport.emitDiv(CgenSupport.ACC, CgenSupport.T1, CgenSupport.ACC, s);
     }
 
 
@@ -1151,6 +1242,8 @@ class neg extends Expression {
       * @param s the output stream 
       * */
     public void code(PrintStream s) {
+      e1.code(s);
+      CgenSupport.emitNeg(CgenSupport.ACC, CgenSupport.ACC, s);
     }
 
 
@@ -1197,6 +1290,19 @@ class lt extends Expression {
       * @param s the output stream 
       * */
     public void code(PrintStream s) {
+      e1.code(s);
+      CgenSupport.emitPush(CgenSupport.ACC, s);
+      e2.code(s);
+      CgenSupport.emitPop(CgenSupport.T1, s);
+      CgenSupport.emitBlt(CgenSupport.T1, CgenSupport.ACC, 1, s);
+      s.printf(CgenSupport.LA + CgenSupport.ACC + " ");
+      BoolConst.truebool.codeRef(s); s.println("");
+      CgenSupport.emitBranch(2, s);
+
+      CgenSupport.emitLabelDef(1, s);
+      s.printf(CgenSupport.LA + CgenSupport.ACC + " ");
+      BoolConst.falsebool.codeRef(s); s.println("");
+      CgenSupport.emitLabelDef(2, s);
     }
 
 
@@ -1369,7 +1475,7 @@ class int_const extends Expression {
       * to you as an example of code generation.
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
 	CgenSupport.emitLoadInt(CgenSupport.ACC,
                                 (IntSymbol)AbstractTable.inttable.lookup(token.getString()), s);
     }
@@ -1452,7 +1558,7 @@ class string_const extends Expression {
       * to you as an example of code generation.
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
 	CgenSupport.emitLoadString(CgenSupport.ACC,
                                    (StringSymbol)AbstractTable.stringtable.lookup(token.getString()), s);
     }
@@ -1496,8 +1602,6 @@ class new_ extends Expression {
       * */
     public void code(PrintStream s) {
     }
-
-
 }
 
 
@@ -1571,7 +1675,8 @@ class no_expr extends Expression {
       * you wish.)
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      // nothing to emit;
     }
 
 
@@ -1592,6 +1697,22 @@ class object extends Expression {
         super(lineNumber);
         name = a1;
     }
+    /** Generates code for this expression.  This method is to be completed 
+      * in programming assignment 5.  (You may add or remove parameters as
+      * you wish.)
+      * @param s the output stream 
+      * */
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      // there are two possible for object
+      // in a register or in memory
+      String l = (String)ct.env.lookup(name);
+      if (l.startsWith("$")) {
+        CgenSupport.emitMove(CgenSupport.ACC, l, s);
+      } else {
+        s.println(CgenSupport.LW + CgenSupport.ACC + " " + l);
+      }
+    }
+
     public TreeNode copy() {
         return new object(lineNumber, copy_AbstractSymbol(name));
     }
@@ -1607,15 +1728,6 @@ class object extends Expression {
 	dump_AbstractSymbol(out, n + 2, name);
 	dump_type(out, n);
     }
-    /** Generates code for this expression.  This method is to be completed 
-      * in programming assignment 5.  (You may add or remove parameters as
-      * you wish.)
-      * @param s the output stream 
-      * */
-    public void code(PrintStream s) {
-    }
-
-
 }
 
 

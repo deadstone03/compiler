@@ -171,6 +171,17 @@ class CgenNode extends class_ {
       return methods;
     }
 
+    public int getMethodInd(AbstractSymbol name) {
+      int i = 0;
+      for(method m: getMethods()) {
+        if (m.name.equals(name)) {
+          return i;
+        }
+        i++;
+      }
+      return i;
+    }
+
     public int getAttrNum() {
       return getAttrs().size();
     }
@@ -237,19 +248,37 @@ class CgenNode extends class_ {
       }
     }
 
-    public void emitAttrInitializer(attr a, PrintStream str) {
-    }
-
-    public void defInitializer(PrintStream str) {
+    public void defInitializer(CgenClassTable classTable, PrintStream str) {
+      classTable.env.enterScope();
       CgenSupport.emitInitRef(getName(), str); str.print(CgenSupport.LABEL);
+      // save self to SELF reg
+      CgenSupport.emitMove(CgenSupport.SELF, CgenSupport.ACC, str);
 
-      for (attr a: getAttrs()) {
-        emitAttrInitializer(a, str);
+      classTable.env.addId(TreeConstants.self, CgenSupport.SELF);
+      for (int ind = 0; ind < getAttrs().size(); ++ind) {
+        getAttrs().get(ind).genCode(classTable, ind, str);
       }
 
+      classTable.env.exitScope();
       for (Enumeration e = getChildren(); e.hasMoreElements();) {
         CgenNode c = (CgenNode)e.nextElement();
-        c.defInitializer(str);
+        c.defInitializer(classTable, str);
+      }
+    }
+
+    public void defMethods(CgenClassTable classTable, PrintStream str) {
+      if (basic_status == NotBasic) {
+        for(method m: getMethods()) {
+          // only need to define method declared in this class.
+          if (m.class_name.equals(getName())) {
+            CgenSupport.emitMethodRef(m.class_name, m.name, str); str.print(CgenSupport.LABEL);
+            m.code(classTable, getName(), str);
+          }
+        }
+      }
+      for(Enumeration e = getChildren(); e.hasMoreElements();) {
+        CgenNode child = (CgenNode)e.nextElement();
+        child.defMethods(classTable, str);
       }
     }
 }

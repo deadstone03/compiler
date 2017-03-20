@@ -143,6 +143,10 @@ class CgenSupport {
 		  + "(" + dest_reg + ")");
     }
 
+    static String getOffsetReg(String reg, int offset) {
+      return "" + offset * WORD_SIZE + "(" + reg + ")";
+    }
+
     /** Emits the LI instruction.
      * @param dest_reg the destination register
      * @param val the integer value
@@ -482,6 +486,16 @@ class CgenSupport {
 	emitAddiu(SP, SP, -4, s);
     }
 
+    /** Emit a sequence of instructions to pop stack top onto register.
+     * Stack grows toward smaller addresses.
+     * @param reg the register
+     * @param s the output stream
+     * */
+    static void emitPop(String reg, PrintStream s) {
+	emitLoad(reg, 1, SP, s);
+	emitAddiu(SP, SP, 4, s);
+    }
+
     /** Emits code to fetch the integer value of the Integer object.
      * @param source a pointer to the Integer object
      * @param dest the destination register for the value
@@ -581,6 +595,17 @@ class CgenSupport {
 	}
 	byteMode(s);
 	s.println("\t.byte\t0\t");
+    }
+
+    public static AbstractSymbol getType(AbstractSymbol t, AbstractSymbol cc) {
+      if (t.equals(TreeConstants.SELF_TYPE)) {
+        return cc;
+      }
+      return t;
+    }
+
+    public static String offsetReg(String reg, int offset) {
+      return "" + offset * WORD_SIZE + "(" + reg + ")";
     }
 }
     

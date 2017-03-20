@@ -40,6 +40,11 @@ class CgenClassTable extends SymbolTable {
     private int intclasstag;
     private int boolclasstag;
 
+    /** value name to location. 
+     * key is the name, value is a string represent a location
+     * */
+    SymbolTable env;
+
     // The following methods emit code for constants and global
     // declarations.
 
@@ -373,8 +378,10 @@ class CgenClassTable extends SymbolTable {
 
     /** Constructs a new class table and invokes the code generator */
     public CgenClassTable(Classes cls, PrintStream str) {
-	nds = new Vector();
 	this.str = str;
+	nds = new Vector();
+        env = new SymbolTable();
+        env.enterScope();
 
 	enterScope();
 	if (Flags.cgen_debug) System.out.println("Building CgenClassTable");
@@ -389,6 +396,7 @@ class CgenClassTable extends SymbolTable {
 
 	code();
 	exitScope();
+        env.exitScope();
     }
 
     /** This method is the meat of the code generator.  It is to be
@@ -421,7 +429,10 @@ class CgenClassTable extends SymbolTable {
 	//                   - the class methods
 	//                   - etc...
 	if (Flags.cgen_debug) System.out.println("code object initializer");
+        // TODO(xingdai): to implement
         codeObjectInitializers();
+	if (Flags.cgen_debug) System.out.println("object methods");
+        codeObjectMethods();
         
     }
 
@@ -452,7 +463,12 @@ class CgenClassTable extends SymbolTable {
 
     public void codeObjectInitializers() {
       CgenNode r = root();
-      r.defInitializer(str);
+      r.defInitializer(this, str);
+    }
+
+    public void codeObjectMethods() {
+      CgenNode r = root();
+      r.defMethods(this, str);
     }
 }
 
