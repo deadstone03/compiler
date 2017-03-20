@@ -607,6 +607,28 @@ class CgenSupport {
     public static String offsetReg(String reg, int offset) {
       return "" + offset * WORD_SIZE + "(" + reg + ")";
     }
+
+    /**
+     * emit code for create a new object.
+     * The result will be in ACC.
+     */
+    public static void emitNewObject(AbstractSymbol o, PrintStream s) {
+      // Get proto
+      s.print(LA + ACC + " "); emitProtObjRef(o, s); s.println("");
+      // call object.copy
+      // Object.copy arg in ACC and return in ACC.
+      s.print(JAL); emitMethodRef(TreeConstants.Object_, TreeConstants.copy, s); s.println("");
+    }
+
+    /**
+     * Init the object.
+     * Value are in the stack, and object is in ACC.
+     * The result will be in ACC. */
+    public static void emitInitObject(AbstractSymbol o, PrintStream s) {
+      s.print(CgenSupport.JAL);
+      CgenSupport.emitInitRef(o, s);
+      s.println("");
+    }
 }
     
     

@@ -249,17 +249,42 @@ class CgenNode extends class_ {
     }
 
     public void defInitializer(CgenClassTable classTable, PrintStream str) {
+      int paramNum = 0;
       classTable.env.enterScope();
       CgenSupport.emitInitRef(getName(), str); str.print(CgenSupport.LABEL);
+
       // save self to SELF reg
       CgenSupport.emitMove(CgenSupport.SELF, CgenSupport.ACC, str);
-
+      // add self to env
       classTable.env.addId(TreeConstants.self, CgenSupport.SELF);
-      for (int ind = 0; ind < getAttrs().size(); ++ind) {
-        getAttrs().get(ind).genCode(classTable, ind, str);
-      }
+      // save current sp to the new fp
+      CgenSupport.emitMove(CgenSupport.FP, CgenSupport.SP, str);
+      // save RA to current top of sp
+      CgenSupport.emitPush(CgenSupport.RA, str);
 
+      if (getName().equals(TreeConstants.Int)) {
+        // init int
+        paramNum = 1;
+        // load the int value to T1
+        CgenSupport.emitLoad(CgenSupport.T1, 1, CgenSupport.FP, str);
+        CgenSupport.emitStoreInt(CgenSupport.T1, CgenSupport.SELF, str);
+      } else {
+        classTable.env.addId(TreeConstants.self, CgenSupport.SELF);
+        for (int ind = 0; ind < getAttrs().size(); ++ind) {
+          getAttrs().get(ind).genCode(classTable, ind, str);
+        }
+      }
+      // load RA
+      CgenSupport.emitLoad(CgenSupport.RA, 1, CgenSupport.SP, str);
+      // pop SP back to the caller
+      int z = CgenSupport.WORD_SIZE * (1 + paramNum);
+      CgenSupport.emitAddiu(CgenSupport.SP, CgenSupport.SP, z, str);
+      // move SELF to ACC
+      CgenSupport.emitMove(CgenSupport.ACC, CgenSupport.SELF, str);
+      // jump back to the caller's next
+      CgenSupport.emitReturn(str);
       classTable.env.exitScope();
+
       for (Enumeration e = getChildren(); e.hasMoreElements();) {
         CgenNode c = (CgenNode)e.nextElement();
         c.defInitializer(classTable, str);

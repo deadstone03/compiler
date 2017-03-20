@@ -702,8 +702,10 @@ class dispatch extends Expression {
       * @param s the output stream 
       * */
     public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
-      // Save the current FP
+      // Save the current FP and SELF
       CgenSupport.emitPush(CgenSupport.FP, s);
+      CgenSupport.emitPush(CgenSupport.SELF, s);
+
       // Push the actuall param in reverse order
       for (int i = actual.getLength() - 1; i >=0; --i) {
         Expression expr = (Expression)actual.getNth(i);
@@ -727,7 +729,8 @@ class dispatch extends Expression {
 
       // Jump to the callee
       CgenSupport.emitJalr(CgenSupport.T1, s);
-      // pop old fp
+      // pop old SELF and FP
+      CgenSupport.emitPop(CgenSupport.SELF, s);
       CgenSupport.emitPop(CgenSupport.FP, s);
     }
 
@@ -1046,6 +1049,10 @@ class plus extends Expression {
       * @param s the output stream 
       * */
     public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      // Save the current FP and SELF
+      CgenSupport.emitPush(CgenSupport.FP, s);
+      CgenSupport.emitPush(CgenSupport.SELF, s);
+
       e1.code(ct, cc, s);
       CgenSupport.emitPush(CgenSupport.ACC, s);
       e2.code(ct, cc, s);
@@ -1056,22 +1063,13 @@ class plus extends Expression {
 
       // store the result
       CgenSupport.emitPush(CgenSupport.ACC, s);
-      // Create a new int object
-      s.print(CgenSupport.LA + CgenSupport.ACC + " ");
-      CgenSupport.emitProtObjRef(TreeConstants.Int, s);
-      s.println("");
-      // Save the current FP
-      CgenSupport.emitPush(CgenSupport.FP, s);
-      // Object.copy arg in ACC and return in ACC.
-      s.print(CgenSupport.JAL);
-      CgenSupport.emitMethodRef(TreeConstants.Object_, TreeConstants.copy, s);
-      s.println("");
-      // pop old fp
+
+      // generate new int in ACC
+      CgenSupport.emitNewObject(TreeConstants.Int, s);
+      CgenSupport.emitInitObject(TreeConstants.Int, s);
+      // pop old SELF and FP
+      CgenSupport.emitPop(CgenSupport.SELF, s);
       CgenSupport.emitPop(CgenSupport.FP, s);
-      // pop the result
-      CgenSupport.emitPop(CgenSupport.T1, s);
-      // Store the result
-      CgenSupport.emitStoreInt(CgenSupport.T1, CgenSupport.ACC, s);
     }
 }
 
@@ -1110,17 +1108,34 @@ class sub extends Expression {
 	e2.dump_with_types(out, n + 2);
 	dump_type(out, n);
     }
+
     /** Generates code for this expression.  This method is to be completed 
       * in programming assignment 5.  (You may add or remove parameters as
       * you wish.)
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
-      e1.code(s);
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      // Save the current FP and SELF
+      CgenSupport.emitPush(CgenSupport.FP, s);
+      CgenSupport.emitPush(CgenSupport.SELF, s);
+
+      e1.code(ct, cc, s);
       CgenSupport.emitPush(CgenSupport.ACC, s);
-      e2.code(s);
+      e2.code(ct, cc, s);
+      CgenSupport.emitFetchInt(CgenSupport.ACC, CgenSupport.ACC, s);
       CgenSupport.emitPop(CgenSupport.T1, s);
+      CgenSupport.emitFetchInt(CgenSupport.T1, CgenSupport.T1, s);
       CgenSupport.emitSub(CgenSupport.ACC, CgenSupport.T1, CgenSupport.ACC, s);
+
+      // store the result
+      CgenSupport.emitPush(CgenSupport.ACC, s);
+
+      // generate new int in ACC
+      CgenSupport.emitNewObject(TreeConstants.Int, s);
+      CgenSupport.emitInitObject(TreeConstants.Int, s);
+      // pop old SELF and FP
+      CgenSupport.emitPop(CgenSupport.SELF, s);
+      CgenSupport.emitPop(CgenSupport.FP, s);
     }
 
 
@@ -1161,17 +1176,34 @@ class mul extends Expression {
 	e2.dump_with_types(out, n + 2);
 	dump_type(out, n);
     }
+
     /** Generates code for this expression.  This method is to be completed 
       * in programming assignment 5.  (You may add or remove parameters as
       * you wish.)
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
-      e1.code(s);
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      // Save the current FP and SELF
+      CgenSupport.emitPush(CgenSupport.FP, s);
+      CgenSupport.emitPush(CgenSupport.SELF, s);
+
+      e1.code(ct, cc, s);
       CgenSupport.emitPush(CgenSupport.ACC, s);
-      e2.code(s);
+      e2.code(ct, cc, s);
+      CgenSupport.emitFetchInt(CgenSupport.ACC, CgenSupport.ACC, s);
       CgenSupport.emitPop(CgenSupport.T1, s);
+      CgenSupport.emitFetchInt(CgenSupport.T1, CgenSupport.T1, s);
       CgenSupport.emitMul(CgenSupport.ACC, CgenSupport.T1, CgenSupport.ACC, s);
+
+      // store the result
+      CgenSupport.emitPush(CgenSupport.ACC, s);
+
+      // generate new int in ACC
+      CgenSupport.emitNewObject(TreeConstants.Int, s);
+      CgenSupport.emitInitObject(TreeConstants.Int, s);
+      // pop old SELF and FP
+      CgenSupport.emitPop(CgenSupport.SELF, s);
+      CgenSupport.emitPop(CgenSupport.FP, s);
     }
 
 
@@ -1217,12 +1249,28 @@ class divide extends Expression {
       * you wish.)
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
-      e1.code(s);
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      // Save the current FP and SELF
+      CgenSupport.emitPush(CgenSupport.FP, s);
+      CgenSupport.emitPush(CgenSupport.SELF, s);
+
+      e1.code(ct, cc, s);
       CgenSupport.emitPush(CgenSupport.ACC, s);
-      e2.code(s);
+      e2.code(ct, cc, s);
+      CgenSupport.emitFetchInt(CgenSupport.ACC, CgenSupport.ACC, s);
       CgenSupport.emitPop(CgenSupport.T1, s);
+      CgenSupport.emitFetchInt(CgenSupport.T1, CgenSupport.T1, s);
       CgenSupport.emitDiv(CgenSupport.ACC, CgenSupport.T1, CgenSupport.ACC, s);
+
+      // store the result
+      CgenSupport.emitPush(CgenSupport.ACC, s);
+
+      // generate new int in ACC
+      CgenSupport.emitNewObject(TreeConstants.Int, s);
+      CgenSupport.emitInitObject(TreeConstants.Int, s);
+      // pop old SELF and FP
+      CgenSupport.emitPop(CgenSupport.SELF, s);
+      CgenSupport.emitPop(CgenSupport.FP, s);
     }
 
 
