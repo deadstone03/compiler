@@ -143,6 +143,15 @@ class CgenSupport {
 		  + "(" + dest_reg + ")");
     }
 
+    /** Emits an SW instruction.
+     * @param dest_reg the destination register
+     * @param location
+     * @param s the output stream
+     * */
+    static void emitStore(String source_reg, String location, PrintStream s) {
+	s.println(SW + source_reg + " " +  location);
+    }
+
     static String getOffsetReg(String reg, int offset) {
       return "" + offset * WORD_SIZE + "(" + reg + ")";
     }

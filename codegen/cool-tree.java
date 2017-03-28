@@ -156,11 +156,13 @@ abstract class Expression extends TreeNode {
             { out.println(Utilities.pad(n) + ": _no_type"); }
     }
     public void code(PrintStream s) {
-      s.println("Not implemeted yet.");
+      dump_with_types(s, 0);
+      s.println("" + get_type() + " Not implemeted yet.");
     }
     
     public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
-      s.println("Not implemeted yet.");
+      dump_with_types(s, 0);
+      s.println("" + get_type() + " Not implemeted yet.");
     }
 }
 
@@ -601,12 +603,19 @@ class assign extends Expression {
 	expr.dump_with_types(out, n + 2);
 	dump_type(out, n);
     }
-    /** Generates code for this expression.  This method is to be completed 
-      * in programming assignment 5.  (You may add or remove parameters as
-      * you wish.)
+
+    /** Generates code for this expression.  This method method is provided
+      * to you as an example of code generation.
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+        expr.code(ct, cc, s);
+        String l = (String)ct.lookup(name);
+        if (l.startsWith("$")) {
+          CgenSupport.emitMove(l, CgenSupport.ACC, s);
+        } else {
+          CgenSupport.emitStore(CgenSupport.ACC, l, s);
+        }
     }
 
 
@@ -801,15 +810,22 @@ class cond extends Expression {
 	else_exp.dump_with_types(out, n + 2);
 	dump_type(out, n);
     }
-    /** Generates code for this expression.  This method is to be completed 
-      * in programming assignment 5.  (You may add or remove parameters as
-      * you wish.)
+    /** Generates code for this expression.  This method method is provided
+      * to you as an example of code generation.
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+        pred.code(ct, cc, s);
+        CgenSupport.emitLoadBool(CgenSupport.T1, BoolConst.truebool, s);
+        int trueLabel = ct.newLabel();
+        int endLabel = ct.newLabel();
+        CgenSupport.emitBeq(CgenSupport.ACC, CgenSupport.T1, trueLabel, s);
+        else_exp.code(ct, cc, s);
+        CgenSupport.emitBranch(endLabel, s);
+        CgenSupport.emitLabelDef(trueLabel, s);
+        then_exp.code(ct, cc, s);
+        CgenSupport.emitLabelDef(endLabel, s);
     }
-
-
 }
 
 
@@ -997,15 +1013,13 @@ class let extends Expression {
 	body.dump_with_types(out, n + 2);
 	dump_type(out, n);
     }
-    /** Generates code for this expression.  This method is to be completed 
-      * in programming assignment 5.  (You may add or remove parameters as
-      * you wish.)
+
+    /** Generates code for this expression.  This method method is provided
+      * to you as an example of code generation.
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
     }
-
-
 }
 
 
@@ -1359,23 +1373,22 @@ class lt extends Expression {
       * you wish.)
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
-      e1.code(s);
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      e1.code(ct, cc, s);
+      CgenSupport.emitFetchInt(CgenSupport.ACC, CgenSupport.ACC, s);
       CgenSupport.emitPush(CgenSupport.ACC, s);
-      e2.code(s);
+      e2.code(ct, cc, s);
+      CgenSupport.emitFetchInt(CgenSupport.ACC, CgenSupport.ACC, s);
       CgenSupport.emitPop(CgenSupport.T1, s);
-      CgenSupport.emitBlt(CgenSupport.T1, CgenSupport.ACC, 1, s);
-      s.printf(CgenSupport.LA + CgenSupport.ACC + " ");
-      BoolConst.truebool.codeRef(s); s.println("");
-      CgenSupport.emitBranch(2, s);
-
-      CgenSupport.emitLabelDef(1, s);
-      s.printf(CgenSupport.LA + CgenSupport.ACC + " ");
-      BoolConst.falsebool.codeRef(s); s.println("");
-      CgenSupport.emitLabelDef(2, s);
+      int trueLabel = ct.newLabel();
+      int endLabel = ct.newLabel();
+      CgenSupport.emitBlt(CgenSupport.T1, CgenSupport.ACC, trueLabel, s);
+      CgenSupport.emitLoadBool(CgenSupport.ACC, BoolConst.falsebool, s);
+      CgenSupport.emitBranch(endLabel, s);
+      CgenSupport.emitLabelDef(trueLabel, s);
+      CgenSupport.emitLoadBool(CgenSupport.ACC, BoolConst.truebool, s);
+      CgenSupport.emitLabelDef(endLabel, s);
     }
-
-
 }
 
 
@@ -1464,7 +1477,21 @@ class leq extends Expression {
       * you wish.)
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+      e1.code(ct, cc, s);
+      CgenSupport.emitFetchInt(CgenSupport.ACC, CgenSupport.ACC, s);
+      CgenSupport.emitPush(CgenSupport.ACC, s);
+      e2.code(ct, cc, s);
+      CgenSupport.emitFetchInt(CgenSupport.ACC, CgenSupport.ACC, s);
+      CgenSupport.emitPop(CgenSupport.T1, s);
+      int trueLabel = ct.newLabel();
+      int endLabel = ct.newLabel();
+      CgenSupport.emitBleq(CgenSupport.T1, CgenSupport.ACC, trueLabel, s);
+      CgenSupport.emitLoadBool(CgenSupport.ACC, BoolConst.falsebool, s);
+      CgenSupport.emitBranch(endLabel, s);
+      CgenSupport.emitLabelDef(trueLabel, s);
+      CgenSupport.emitLoadBool(CgenSupport.ACC, BoolConst.truebool, s);
+      CgenSupport.emitLabelDef(endLabel, s);
     }
 
 
@@ -1500,14 +1527,25 @@ class comp extends Expression {
 	e1.dump_with_types(out, n + 2);
 	dump_type(out, n);
     }
-    /** Generates code for this expression.  This method is to be completed 
-      * in programming assignment 5.  (You may add or remove parameters as
-      * you wish.)
+
+    /** Generates code for this expression.  This method method is provided
+      * to you as an example of code generation.
+      * @param ct a CgenClassTable
+      * @param cc current class
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
+        e1.code(ct, cc, s);
+        CgenSupport.emitLoadBool(CgenSupport.T1, BoolConst.truebool, s);
+        int trueLabel = ct.newLabel();
+        CgenSupport.emitBeq(CgenSupport.ACC, CgenSupport.T1, trueLabel, s);
+        CgenSupport.emitLoadBool(CgenSupport.ACC, BoolConst.truebool, s);
+        int endLabel = ct.newLabel();
+        CgenSupport.emitBranch(endLabel, s);
+        CgenSupport.emitLabelDef(trueLabel, s);
+        CgenSupport.emitLoadBool(CgenSupport.ACC, BoolConst.falsebool, s);
+        CgenSupport.emitLabelDef(endLabel, s);
     }
-
 
 }
 
@@ -1546,8 +1584,8 @@ class int_const extends Expression {
       * @param s the output stream 
       * */
     public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
-	CgenSupport.emitLoadInt(CgenSupport.ACC,
-                                (IntSymbol)AbstractTable.inttable.lookup(token.getString()), s);
+      CgenSupport.emitLoadInt(CgenSupport.ACC,
+          (IntSymbol)AbstractTable.inttable.lookup(token.getString()), s);
     }
 
 }
@@ -1586,7 +1624,7 @@ class bool_const extends Expression {
       * to you as an example of code generation.
       * @param s the output stream 
       * */
-    public void code(PrintStream s) {
+    public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
 	CgenSupport.emitLoadBool(CgenSupport.ACC, new BoolConst(val), s);
     }
 
@@ -1630,7 +1668,7 @@ class string_const extends Expression {
       * */
     public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
 	CgenSupport.emitLoadString(CgenSupport.ACC,
-                                   (StringSymbol)AbstractTable.stringtable.lookup(token.getString()), s);
+            (StringSymbol)AbstractTable.stringtable.lookup(token.getString()), s);
     }
 
 }
@@ -1748,8 +1786,6 @@ class no_expr extends Expression {
     public void code(CgenClassTable ct, AbstractSymbol cc, PrintStream s) {
       // nothing to emit;
     }
-
-
 }
 
 

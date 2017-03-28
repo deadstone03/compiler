@@ -39,6 +39,7 @@ class CgenClassTable extends SymbolTable {
     private int stringclasstag;
     private int intclasstag;
     private int boolclasstag;
+    private int labelCount = 0;
 
     /** value name to location. 
      * key is the name, value is a string represent a location
@@ -342,6 +343,10 @@ class CgenClassTable extends SymbolTable {
 		       filename);
 
 	installClass(new CgenNode(Str_class, CgenNode.Basic, this));
+    }
+
+    public int newLabel() {
+      return labelCount++;
     }
 	
     // The following creates an inheritance graph from
